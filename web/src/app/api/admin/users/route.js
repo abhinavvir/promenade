@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { hash } from "argon2";
+import bcrypt from "bcryptjs";
 
 // Generate a random temporary password
 function generateTempPassword() {
@@ -99,7 +99,7 @@ export async function POST(request) {
 
     // Generate temporary password
     const tempPassword = generateTempPassword();
-    const hashedPassword = await hash(tempPassword);
+    const hashedPassword = await bcrypt.hash(tempPassword, 12);
 
     // Create user
     const newUser = await sql`
@@ -161,7 +161,7 @@ export async function PATCH(request) {
 
     // Generate a new temporary password
     const tempPassword = generateTempPassword();
-    const hashedPassword = await hash(tempPassword);
+    const hashedPassword = await bcrypt.hash(tempPassword, 12);
 
     // Check if an auth_accounts record exists for this user
     const existing = await sql`

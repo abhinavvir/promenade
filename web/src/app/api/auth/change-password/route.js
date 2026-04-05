@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { hash, verify } from "argon2";
+import bcrypt from "bcryptjs";
 import { auth } from "@/auth";
 import { getRequestUser } from "@/app/api/utils/mobile-auth";
 
@@ -43,7 +43,7 @@ export async function POST(request) {
 
     const account = accounts[0];
 
-    const isValid = await verify(account.password, currentPassword);
+    const isValid = await bcrypt.compare(account.password, currentPassword);
     if (!isValid) {
       return Response.json(
         { error: "Current password is incorrect" },
@@ -51,7 +51,7 @@ export async function POST(request) {
       );
     }
 
-    const hashedNewPassword = await hash(newPassword);
+    const hashedNewPassword = await bcrypt.hash(newPassword, 12);
 
     await sql`
       UPDATE auth_accounts

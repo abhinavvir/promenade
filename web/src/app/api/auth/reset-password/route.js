@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import argon2 from "argon2";
+import bcrypt from "bcryptjs";
 
 export async function POST(request) {
   try {
@@ -40,7 +40,7 @@ export async function POST(request) {
     const resetToken = tokens[0];
 
     // Hash the new password using argon2
-    const hashedPassword = await argon2.hash(password);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // Update user's password and mark token as used in a transaction
     await sql.transaction([

@@ -74,9 +74,6 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
-  ssr: {
-    external: ['argon2'],
-  },
   clearScreen: false,
   server: {
     allowedHosts: true,

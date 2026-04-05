@@ -4,7 +4,7 @@ import { skipCSRFCheck } from '@auth/core';
 import Credentials from '@auth/core/providers/credentials';
 import { authHandler, initAuthConfig } from '@hono/auth-js';
 import { Pool, neonConfig } from '@neondatabase/serverless';
-import { hash, verify } from 'argon2';
+import bcrypt from 'bcryptjs';
 import { contextStorage } from 'hono/context-storage';
 import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
@@ -97,7 +97,7 @@ export default createHonoVercelServer({
               if (!user) return null;
               const matchingAccount = user.accounts.find((a: any) => a.provider === 'credentials');
               if (!matchingAccount?.password) return null;
-              const isValid = await verify(matchingAccount.password, password as string);
+              const isValid = await bcrypt.compare(password as string, matchingAccount.password);
               if (!isValid) return null;
               return user;
             },
@@ -124,7 +124,7 @@ export default createHonoVercelServer({
                 image: typeof image === 'string' && image.length > 0 ? image : undefined,
               });
               await adapter.linkAccount({
-                extraData: { password: await hash(password as string) },
+                extraData: { password: await bcrypt.hash(password as string, 12) },
                 type: 'credentials',
                 userId: newUser.id,
                 providerAccountId: newUser.id,

@@ -1,6 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { signMobileJwt } from "@/app/api/utils/mobile-auth";
-import { verify } from "argon2";
+import bcrypt from "bcryptjs";
 
 /**
  * POST /api/auth/mobile-login
@@ -64,7 +64,7 @@ export async function POST(request) {
       );
     }
 
-    const isValid = await verify(accounts[0].password, password);
+    const isValid = await bcrypt.compare(accounts[0].password, password);
     if (!isValid) {
       return Response.json(
         { error: "Invalid phone number or password" },
