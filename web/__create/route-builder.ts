@@ -3,16 +3,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import type { Handler } from 'hono/types';
-import updatedFetch from '../src/__create/fetch';
-
 const API_BASENAME = '/api';
 const api = new Hono();
 
 // Get current directory
 const __dirname = join(fileURLToPath(new URL('.', import.meta.url)), '../src/app/api');
-if (globalThis.fetch) {
-  globalThis.fetch = updatedFetch;
-}
 
 // Recursively find all route.js files
 async function findRouteFiles(dir: string): Promise<string[]> {
