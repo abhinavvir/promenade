@@ -1,29 +1,26 @@
-/**
- * WARNING: This file connects this app to Create's internal auth system. Do
- * not attempt to edit it. Do not import @auth/create or @auth/create
- * anywhere else or it may break. This is an internal package.
- */
-import CreateAuth from '@auth/create';
-import Credentials from '@auth/core/providers/credentials';
+import { getToken } from '@auth/core/jwt';
+import { getContext } from 'hono/context-storage';
 
-const result = CreateAuth({
-	providers: [
-		Credentials({
-			credentials: {
-				email: {
-					label: 'Email',
-					type: 'email',
-				},
-				password: {
-					label: 'Password',
-					type: 'password',
-				},
-			},
-		}),
-	],
-	pages: {
-		signIn: '/account/signin',
-		signOut: '/account/logout',
-	},
-});
-export const { auth } = result;
+export const auth = async () => {
+  try {
+    const c = getContext();
+    const token = await getToken({
+      req: c.req.raw,
+      secret: process.env.AUTH_SECRET,
+      secureCookie: process.env.AUTH_URL?.startsWith('https') ?? false,
+    });
+    if (token) {
+      return {
+        user: {
+          id: token.sub,
+          email: token.email,
+          name: token.name,
+          image: token.picture,
+        },
+        expires: String(token.exp),
+      };
+    }
+  } catch {
+    return null;
+  }
+};
