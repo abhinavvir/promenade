@@ -1,6 +1,6 @@
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
-import { LayoutDashboard, ClipboardList, User } from "lucide-react-native";
+import { LayoutDashboard, ClipboardList, BarChart2, User } from "lucide-react-native";
 import { Platform, View } from "react-native";
 import { useTheme, brandColors } from "@/components/hooks/useTheme";
 
@@ -56,6 +56,15 @@ export default function AdminTabLayout() {
           title: "Sign-In Logs",
           tabBarIcon: ({ color, focused }) => (
             <ClipboardList color={focused ? brandColors.accentStart : color} size={22} strokeWidth={focused ? 2 : 1.5} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="reports"
+        options={{
+          title: "Reports",
+          tabBarIcon: ({ color, focused }) => (
+            <BarChart2 color={focused ? brandColors.accentStart : color} size={22} strokeWidth={focused ? 2 : 1.5} />
           ),
         }}
       />
