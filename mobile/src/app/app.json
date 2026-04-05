@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "Property Manager Compliance App",
+    "slug": "5e443de9-caad-457d-8300-5994068d93a1",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "propertymanagercomplianceapp.5e443de9-caad-457d-8300-5994068d93a1",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app does not use your camera.",
+        "NSContactsUsageDescription": "We need access to your contacts to use contacts.",
+        "NSCalendarsUsageDescription": "This app does not use your calendar.",
+        "NSCalendarsFullAccessUsageDescription": "This app does not use your calendar.",
+        "NSRemindersUsageDescription": "This app does not use your reminders.",
+        "NSRemindersFullAccessUsageDescription": "This app does not use your reminders.",
+        "NSMicrophoneUsageDescription": "This app does not use your microphone.",
+        "NSPhotoLibraryUsageDescription": "This app does not use your photo library.",
+        "NSPhotoLibraryAddUsageDescription": "This app does not use your photo library.",
+        "NSLocationWhenInUseUsageDescription": "We need access to your location to help you find your way.",
+        "NSLocationAlwaysUsageDescription": "We need access to your location to help you find your way.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "We need access to your location to help you find your way.",
+        "NSSpeechRecognitionUsageDescription": "This app does not use your speech recognition.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.createinc.5e443de9caad457d83005994068d93a1"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "03df6b7d-2893-428d-accd-4a09f123d953"
+      }
+    },
+    "owner": "create-inc",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/03df6b7d-2893-428d-accd-4a09f123d953"
+    }
+  }
+}
