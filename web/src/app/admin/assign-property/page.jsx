@@ -1,25 +1,29 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
+
+// Lazy load Leaflet components to avoid SSR issues
+const MapContainer = lazy(() => import("react-leaflet").then((m) => ({ default: m.MapContainer })));
+const TileLayer = lazy(() => import("react-leaflet").then((m) => ({ default: m.TileLayer })));
+const Marker = lazy(() => import("react-leaflet").then((m) => ({ default: m.Marker })));
+const useMapEvents = lazy(() => import("react-leaflet").then((m) => ({ default: m.useMapEvents })));
+
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 // Fix for default marker icons in Leaflet with Vite
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+if (typeof window !== "undefined") {
+  delete L.Icon.Default.prototype._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  });
+}
 
 function MapClickHandler({ onMapClick }) {
-  useMapEvents({
-    click(e) {
-      onMapClick({ detail: { latLng: e.latlng } });
-    },
-  });
-  return null;
+  const UseMapEvents = require("react-leaflet").useMapEvents;
+  return <UseMapEvents events={{ click: (e) => onMapClick({ detail: { latLng: e.latlng } }) }} />;
 }
 
 function AddressSearch({ onPlaceSelect, onError }) {
@@ -151,6 +155,7 @@ export default function AssignPropertyPage() {
   const [mapCenter, setMapCenter] = useState([40.7128, -74.006]);
   const [mapZoom, setMapZoom] = useState(12);
   const [mapKey, setMapKey] = useState(0);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -349,26 +354,53 @@ export default function AssignPropertyPage() {
                   Or Click on Map
                 </label>
                 <div className="overflow-hidden rounded-lg border-2 border-gray-200 shadow-lg">
-                  <MapContainer
-                    key={mapKey}
-                    center={mapCenter}
-                    zoom={mapZoom}
-                    style={{ height: "400px", width: "100%" }}
-                    scrollWheelZoom={false}
-                  >
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <MapClickHandler onMapClick={handleMapClick} />
-                    {selectedLocation && (
-                      <Marker position={[selectedLocation.lat, selectedLocation.lng]} />
-                    )}
-                  </MapContainer>
+                  {mapLoaded ? (
+                    <Suspense
+                      fallback={
+                        <div
+                          style={{ height: "400px", width: "100%" }}
+                          className="flex items-center justify-center bg-gray-100"
+                        >
+                          Loading map...
+                        </div>
+                      }
+                    >
+                      <MapContainer
+                        key={mapKey}
+                        center={mapCenter}
+                        zoom={mapZoom}
+                        style={{ height: "400px", width: "100%" }}
+                        scrollWheelZoom={false}
+                        whenReady={() => setMapLoaded(true)}
+                      >
+                        <TileLayer
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                        <MapClickHandler onMapClick={handleMapClick} />
+                        {selectedLocation && (
+                          <Marker position={[selectedLocation.lat, selectedLocation.lng]} />
+                        )}
+                      </MapContainer>
+                    </Suspense>
+                  ) : (
+                    <div
+                      style={{ height: "400px", width: "100%" }}
+                      className="flex items-center justify-center bg-gray-100"
+                    >
+                      <button
+                        onClick={() => setMapLoaded(true)}
+                        className="rounded-lg bg-blue-500 px-4 py-2 text-white hover:bg-blue-600"
+                      >
+                        Load Map
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {selectedLocation && (
                   <div className="mt-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-700">
-                    📍 Location selected: {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                    📍 Location selected: {selectedLocation.lat.toFixed(6)},{" "}
+                    {selectedLocation.lng.toFixed(6)}
                   </div>
                 )}
               </div>
@@ -451,9 +483,7 @@ export default function AssignPropertyPage() {
                   disabled={loading || users.length === 0}
                   className="w-full rounded-lg bg-[#357AFF] px-4 py-3 text-base font-medium text-white transition-colors hover:bg-[#2E69DE] focus:outline-none focus:ring-2 focus:ring-[#357AFF] focus:ring-offset-2 disabled:opacity-50"
                 >
-                  {loading
-                    ? "Creating Property..."
-                    : "Create & Assign Property"}
+                  {loading ? "Creating Property..." : "Create & Assign Property"}
                 </button>
               </form>
 
