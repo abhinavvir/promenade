@@ -1,44 +1,140 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import {
-  APIProvider,
-  Map,
-  Marker,
-  useMapsLibrary,
-} from "@vis.gl/react-google-maps";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
-function PlaceAutocomplete({ onPlaceSelect }) {
-  const [placeAutocomplete, setPlaceAutocomplete] = useState(null);
+// Fix for default marker icons in Leaflet with Vite
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+function MapClickHandler({ onMapClick }) {
+  useMapEvents({
+    click(e) {
+      onMapClick({ detail: { latLng: e.latlng } });
+    },
+  });
+  return null;
+}
+
+function AddressSearch({ onPlaceSelect, onError }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const inputRef = useRef(null);
-  const places = useMapsLibrary("places");
+  const resultsRef = useRef(null);
 
+  // Close results when clicking outside
   useEffect(() => {
-    if (!places || !inputRef.current) return;
-
-    const options = {
-      fields: ["geometry", "name", "formatted_address"],
+    const handleClickOutside = (e) => {
+      if (resultsRef.current && !resultsRef.current.contains(e.target) && !inputRef.current.contains(e.target)) {
+        setShowResults(false);
+      }
     };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-    setPlaceAutocomplete(new places.Autocomplete(inputRef.current, options));
-  }, [places]);
+  const searchAddress = async () => {
+    if (!query.trim()) return;
 
-  useEffect(() => {
-    if (!placeAutocomplete) return;
+    setSearching(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`,
+        {
+          headers: {
+            "User-Agent": "Promenade-Property-Manager",
+          },
+        }
+      );
 
-    placeAutocomplete.addListener("place_changed", () => {
-      const place = placeAutocomplete.getPlace();
-      onPlaceSelect(place);
+      if (!response.ok) {
+        throw new Error("Search failed");
+      }
+
+      const data = await response.json();
+      setResults(data);
+      setShowResults(true);
+    } catch (err) {
+      onError("Failed to search address. Please try again.");
+      console.error("Nominatim error:", err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSelectPlace = (place) => {
+    const lat = parseFloat(place.lat);
+    const lon = parseFloat(place.lon);
+
+    onPlaceSelect({
+      geometry: {
+        location: {
+          lat: () => lat,
+          lng: () => lon,
+        },
+      },
+      formatted_address: place.display_name,
+      name: place.display_name.split(",")[0],
     });
-  }, [placeAutocomplete, onPlaceSelect]);
+
+    setQuery(place.display_name);
+    setShowResults(false);
+    setResults([]);
+  };
 
   return (
-    <input
-      ref={inputRef}
-      type="text"
-      placeholder="Search for an address..."
-      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
-    />
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => results.length > 0 && setShowResults(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            searchAddress();
+          }
+        }}
+        placeholder="Search for an address..."
+        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
+      />
+      <button
+        type="button"
+        onClick={searchAddress}
+        disabled={searching || !query.trim()}
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600 disabled:bg-gray-300"
+      >
+        {searching ? "..." : "🔍"}
+      </button>
+
+      {showResults && results.length > 0 && (
+        <div
+          ref={resultsRef}
+          className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
+        >
+          {results.map((place, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleSelectPlace(place)}
+              className="w-full border-b border-gray-100 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 last:border-0"
+            >
+              <div className="font-medium text-gray-900">{place.display_name.split(",")[0]}</div>
+              <div className="truncate text-xs text-gray-500">{place.display_name}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -52,8 +148,9 @@ export default function AssignPropertyPage() {
   const [fetchingUsers, setFetchingUsers] = useState(true);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
-  const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.006 });
+  const [mapCenter, setMapCenter] = useState([40.7128, -74.006]);
   const [mapZoom, setMapZoom] = useState(12);
+  const [mapKey, setMapKey] = useState(0);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -70,7 +167,9 @@ export default function AssignPropertyPage() {
           }
         }
       })
-      .catch(() => { window.location.href = "/account/signin"; });
+      .catch(() => {
+        window.location.href = "/account/signin";
+      });
   }, []);
 
   const fetchUsers = async () => {
@@ -84,6 +183,13 @@ export default function AssignPropertyPage() {
 
       const data = await response.json();
       setUsers(data.users || []);
+
+      // Show helpful message if no managers exist
+      if ((data.users || []).length === 0) {
+        setError(
+          "No managers found. Please create a manager account first via Manage Users.",
+        );
+      }
     } catch (err) {
       console.error("Error fetching users:", err);
       setError("Failed to load users. Please refresh the page.");
@@ -102,17 +208,42 @@ export default function AssignPropertyPage() {
     const lng = place.geometry.location.lng();
 
     setSelectedLocation({ lat, lng });
-    setMapCenter({ lat, lng });
+    setMapCenter([lat, lng]);
     setMapZoom(16);
     setPropertyAddress(place.formatted_address || "");
     setPropertyName(place.name || "");
     setError(null);
+
+    // Force map remount to center on new location
+    setMapKey((prev) => prev + 1);
   };
 
   const handleMapClick = (event) => {
     const lat = event.detail.latLng.lat;
     const lng = event.detail.latLng.lng;
     setSelectedLocation({ lat, lng });
+
+    // Reverse geocode to get address
+    fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+      {
+        headers: {
+          "User-Agent": "Promenade-Property-Manager",
+        },
+      }
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) {
+          setPropertyAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        } else {
+          setPropertyAddress(data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        }
+      })
+      .catch(() => {
+        setPropertyAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+      });
+
     setError(null);
   };
 
@@ -151,15 +282,16 @@ export default function AssignPropertyPage() {
 
       if (response.ok) {
         setMessage(
-          `✅ Success! Property "${propertyName}" assigned to manager. <a href="/admin/manage-users">Back to Manage Users</a>`,
+          `✅ Success! Property "${propertyName}" assigned to manager. <a href="/admin/manage-users" class="underline">Back to Manage Users</a>`,
         );
         // Reset form
         setPropertyName("");
         setPropertyAddress("");
         setSelectedLocation(null);
         setSelectedUserId("");
-        setMapCenter({ lat: 40.7128, lng: -74.006 });
+        setMapCenter([40.7128, -74.006]);
         setMapZoom(12);
+        setMapKey((prev) => prev + 1);
       } else {
         setError(data.error || "Failed to create property");
       }
@@ -196,7 +328,7 @@ export default function AssignPropertyPage() {
             Assign New Property
           </h1>
           <p className="mb-8 text-center text-sm text-gray-600">
-            Search for an address or select a location on the map
+            Search for an address or select a location on the map (powered by OpenStreetMap)
           </p>
 
           <div className="grid gap-8 md:grid-cols-2">
@@ -206,11 +338,10 @@ export default function AssignPropertyPage() {
                 <label className="mb-2 block text-sm font-medium text-gray-700">
                   🔍 Search Address
                 </label>
-                <APIProvider
-                  apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-                >
-                  <PlaceAutocomplete onPlaceSelect={handlePlaceSelect} />
-                </APIProvider>
+                <AddressSearch onPlaceSelect={handlePlaceSelect} onError={setError} />
+                <p className="mt-1 text-xs text-gray-500">
+                  Powered by OpenStreetMap • Free geocoding
+                </p>
               </div>
 
               <div>
@@ -218,25 +349,26 @@ export default function AssignPropertyPage() {
                   Or Click on Map
                 </label>
                 <div className="overflow-hidden rounded-lg border-2 border-gray-200 shadow-lg">
-                  <APIProvider
-                    apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+                  <MapContainer
+                    key={mapKey}
+                    center={mapCenter}
+                    zoom={mapZoom}
+                    style={{ height: "400px", width: "100%" }}
+                    scrollWheelZoom={false}
                   >
-                    <Map
-                      style={{ width: "100%", height: "400px" }}
-                      center={mapCenter}
-                      zoom={mapZoom}
-                      gestureHandling="greedy"
-                      onClick={handleMapClick}
-                    >
-                      {selectedLocation && (
-                        <Marker position={selectedLocation} />
-                      )}
-                    </Map>
-                  </APIProvider>
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <MapClickHandler onMapClick={handleMapClick} />
+                    {selectedLocation && (
+                      <Marker position={[selectedLocation.lat, selectedLocation.lng]} />
+                    )}
+                  </MapContainer>
                 </div>
                 {selectedLocation && (
                   <div className="mt-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-700">
-                    📍 Location selected
+                    📍 Location selected: {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
                   </div>
                 )}
               </div>
@@ -291,12 +423,21 @@ export default function AssignPropertyPage() {
                       </option>
                     ))}
                   </select>
+                  {users.length === 0 && (
+                    <p className="text-xs text-amber-600">
+                      No managers available.{" "}
+                      <a href="/admin/manage-users" className="underline">
+                        Create one here
+                      </a>
+                    </p>
+                  )}
                 </div>
 
                 {message && (
-                  <div className="rounded-lg bg-green-50 p-4 text-sm text-green-600">
-                    {message}
-                  </div>
+                  <div
+                    className="rounded-lg bg-green-50 p-4 text-sm text-green-600"
+                    dangerouslySetInnerHTML={{ __html: message }}
+                  />
                 )}
 
                 {error && (
@@ -307,7 +448,7 @@ export default function AssignPropertyPage() {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || users.length === 0}
                   className="w-full rounded-lg bg-[#357AFF] px-4 py-3 text-base font-medium text-white transition-colors hover:bg-[#2E69DE] focus:outline-none focus:ring-2 focus:ring-[#357AFF] focus:ring-offset-2 disabled:opacity-50"
                 >
                   {loading

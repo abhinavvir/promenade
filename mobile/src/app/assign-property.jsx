@@ -1,10 +1,12 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as Location from "expo-location";
 import {
   AlertCircle,
   Building2,
   ChevronLeft,
+  Locate,
   MapPin,
   Plus,
   Trash2,
@@ -44,6 +46,8 @@ export default function AssignPropertyScreen() {
   const [propLng, setPropLng] = useState("");
   const [selectedManagerId, setSelectedManagerId] = useState(null);
   const [addError, setAddError] = useState("");
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const { data: propsData, isLoading: propsLoading, refetch, isRefetching } = useQuery({
     queryKey: ["all-properties"],
@@ -89,16 +93,99 @@ export default function AssignPropertyScreen() {
   });
 
   const resetForm = () => {
-    setPropName(""); setPropAddress(""); setPropLat(""); setPropLng(""); setSelectedManagerId(null); setAddError("");
+    setPropName("");
+    setPropAddress("");
+    setPropLat("");
+    setPropLng("");
+    setSelectedManagerId(null);
+    setAddError("");
+    setShowAdvanced(false);
+  };
+
+  const getCurrentLocation = async () => {
+    setGettingLocation(true);
+    setAddError("");
+
+    try {
+      // Request location permission
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== "granted") {
+        setAddError("Location permission is required to get your current position.");
+        setGettingLocation(false);
+        return;
+      }
+
+      // Get current location
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const lat = location.coords.latitude;
+      const lng = location.coords.longitude;
+
+      setPropLat(lat.toString());
+      setPropLng(lng.toString());
+
+      // Reverse geocode to get address
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+          {
+            headers: {
+              "User-Agent": "Promenade-Mobile-App",
+            },
+          }
+        );
+        const data = await response.json();
+
+        if (data.display_name) {
+          setPropAddress(data.display_name);
+        } else {
+          setPropAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        }
+
+        if (!propName.trim()) {
+          setPropName(data.display_name?.split(",")?.[0]?.trim() || "New Property");
+        }
+      } catch (geocodeError) {
+        // Geocode failed, but we have coordinates
+        setPropAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        console.warn("Geocoding failed:", geocodeError);
+      }
+
+      setAddError("");
+    } catch (error) {
+      console.error("Location error:", error);
+      setAddError("Failed to get location. Please check your GPS settings.");
+    } finally {
+      setGettingLocation(false);
+    }
   };
 
   const handleCreate = () => {
     setAddError("");
-    if (!propName.trim()) { setAddError("Property name is required"); return; }
-    if (!propAddress.trim()) { setAddError("Address is required"); return; }
-    if (!propLat || isNaN(parseFloat(propLat))) { setAddError("Valid latitude is required"); return; }
-    if (!propLng || isNaN(parseFloat(propLng))) { setAddError("Valid longitude is required"); return; }
-    if (!selectedManagerId) { setAddError("Please select a manager"); return; }
+
+    if (!propName.trim()) {
+      setAddError("Property name is required");
+      return;
+    }
+
+    if (!propAddress.trim()) {
+      setAddError("Address is required");
+      return;
+    }
+
+    if (!propLat || !propLng || isNaN(parseFloat(propLat)) || isNaN(parseFloat(propLng))) {
+      setAddError("Please use 'Get My Location' or enter coordinates in Advanced");
+      return;
+    }
+
+    if (!selectedManagerId) {
+      setAddError("Please select a manager");
+      return;
+    }
+
     createMutation.mutate();
   };
 
@@ -114,29 +201,50 @@ export default function AssignPropertyScreen() {
   };
 
   const renderProperty = ({ item: property }) => (
-    <View style={{
-      backgroundColor: colors.cardBackground,
-      borderRadius: radius.xl,
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginBottom: spacing.md,
-      padding: spacing.xl,
-    }}>
+    <View
+      style={{
+        backgroundColor: colors.cardBackground,
+        borderRadius: radius.xl,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginBottom: spacing.md,
+        padding: spacing.xl,
+      }}
+    >
       <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
         <LinearGradient
           colors={[brandColors.gradientStart, brandColors.gradientEnd]}
-          style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", marginRight: spacing.md }}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            alignItems: "center",
+            justifyContent: "center",
+            marginRight: spacing.md,
+          }}
         >
           <Building2 size={16} color="#FFFFFF" strokeWidth={2} />
         </LinearGradient>
 
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: typography.sizes.md, fontWeight: typography.weights.semibold, color: colors.text, marginBottom: 2 }}>
+          <Text
+            style={{
+              fontSize: typography.sizes.md,
+              fontWeight: typography.weights.semibold,
+              color: colors.text,
+              marginBottom: 2,
+            }}
+          >
             {property.name}
           </Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: spacing.sm }}>
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: spacing.sm }}
+          >
             <MapPin size={11} color={colors.secondaryText} strokeWidth={1.5} />
-            <Text style={{ fontSize: typography.sizes.xs, color: colors.secondaryText, flex: 1 }} numberOfLines={1}>
+            <Text
+              style={{ fontSize: typography.sizes.xs, color: colors.secondaryText, flex: 1 }}
+              numberOfLines={1}
+            >
               {property.address}
             </Text>
           </View>
@@ -148,7 +256,11 @@ export default function AssignPropertyScreen() {
           )}
         </View>
 
-        <TouchableOpacity onPress={() => confirmDelete(property)} activeOpacity={0.8} style={{ padding: spacing.xs, marginLeft: spacing.sm }}>
+        <TouchableOpacity
+          onPress={() => confirmDelete(property)}
+          activeOpacity={0.8}
+          style={{ padding: spacing.xs, marginLeft: spacing.sm }}
+        >
           <Trash2 size={16} color={brandColors.error} strokeWidth={1.5} />
         </TouchableOpacity>
       </View>
@@ -164,23 +276,42 @@ export default function AssignPropertyScreen() {
         colors={[brandColors.gradientStart, brandColors.gradientMid]}
         style={{
           paddingTop: insets.top + spacing.md,
-          paddingBottom: spacing['2xl'],
-          paddingHorizontal: spacing['2xl'],
+          paddingBottom: spacing["2xl"],
+          paddingHorizontal: spacing["2xl"],
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <TouchableOpacity onPress={() => router.back()} activeOpacity={0.8} style={{ marginRight: spacing.md }}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+            style={{ marginRight: spacing.md }}
+          >
             <ChevronLeft size={24} color="#F0EDE8" strokeWidth={2} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: typography.sizes['2xl'], fontWeight: typography.weights.bold, color: "#F0EDE8", letterSpacing: -0.5 }}>
+            <Text
+              style={{
+                fontSize: typography.sizes["2xl"],
+                fontWeight: typography.weights.bold,
+                color: "#F0EDE8",
+                letterSpacing: -0.5,
+              }}
+            >
               Properties
             </Text>
-            <Text style={{ fontSize: typography.sizes.sm, color: "rgba(240,237,232,0.55)", marginTop: 2 }}>
+            <Text
+              style={{ fontSize: typography.sizes.sm, color: "rgba(240,237,232,0.55)", marginTop: 2 }}
+            >
               {properties.length} properties
             </Text>
           </View>
-          <TouchableOpacity onPress={() => { resetForm(); setShowAddModal(true); }} activeOpacity={0.85}>
+          <TouchableOpacity
+            onPress={() => {
+              resetForm();
+              setShowAddModal(true);
+            }}
+            activeOpacity={0.85}
+          >
             <LinearGradient
               colors={[brandColors.accentStart, brandColors.accentEnd]}
               style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" }}
@@ -200,16 +331,26 @@ export default function AssignPropertyScreen() {
           data={properties}
           keyExtractor={(p) => String(p.id)}
           renderItem={renderProperty}
-          contentContainerStyle={{ padding: spacing.xl, paddingBottom: insets.bottom + spacing['4xl'] }}
+          contentContainerStyle={{ padding: spacing.xl, paddingBottom: insets.bottom + spacing["4xl"] }}
           refreshing={isRefetching}
           onRefresh={refetch}
           ListEmptyComponent={() => (
-            <View style={{ alignItems: "center", paddingTop: spacing['5xl'] }}>
+            <View style={{ alignItems: "center", paddingTop: spacing["5xl"] }}>
               <Building2 size={48} color={colors.emptyStateIcon} strokeWidth={1} />
-              <Text style={{ fontSize: typography.sizes.lg, fontWeight: typography.weights.semibold, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm }}>
+              <Text
+                style={{
+                  fontSize: typography.sizes.lg,
+                  fontWeight: typography.weights.semibold,
+                  color: colors.text,
+                  marginTop: spacing.xl,
+                  marginBottom: spacing.sm,
+                }}
+              >
                 No Properties Yet
               </Text>
-              <Text style={{ fontSize: typography.sizes.sm, color: colors.secondaryText, textAlign: "center" }}>
+              <Text
+                style={{ fontSize: typography.sizes.sm, color: colors.secondaryText, textAlign: "center" }}
+              >
                 Tap + to add the first property
               </Text>
             </View>
@@ -221,36 +362,109 @@ export default function AssignPropertyScreen() {
       <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAddModal(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={{ flex: 1, backgroundColor: colors.background }}>
-            <View style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: spacing['2xl'],
-              borderBottomWidth: 1,
-              borderBottomColor: colors.border,
-            }}>
-              <Text style={{ fontSize: typography.sizes.xl, fontWeight: typography.weights.bold, color: colors.text }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: spacing["2xl"],
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: typography.sizes.xl,
+                  fontWeight: typography.weights.bold,
+                  color: colors.text,
+                }}
+              >
                 Add Property
               </Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity
+                onPress={() => setShowAddModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <X size={22} color={colors.secondaryText} strokeWidth={2} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: spacing['2xl'] }} keyboardShouldPersistTaps="handled">
+            <ScrollView contentContainerStyle={{ padding: spacing["2xl"] }} keyboardShouldPersistTaps="handled">
               {addError ? (
-                <View style={{ backgroundColor: colors.errorBg, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.xl, flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                <View
+                  style={{
+                    backgroundColor: colors.errorBg,
+                    borderRadius: radius.md,
+                    padding: spacing.lg,
+                    marginBottom: spacing.xl,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: spacing.sm,
+                  }}
+                >
                   <AlertCircle size={16} color={brandColors.error} strokeWidth={2} />
-                  <Text style={{ fontSize: typography.sizes.sm, color: brandColors.error, flex: 1 }}>{addError}</Text>
+                  <Text style={{ fontSize: typography.sizes.sm, color: brandColors.error, flex: 1 }}>
+                    {addError}
+                  </Text>
                 </View>
               ) : null}
+
+              {/* Get Location Button */}
+              <TouchableOpacity
+                onPress={getCurrentLocation}
+                disabled={gettingLocation}
+                activeOpacity={0.8}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: spacing.sm,
+                  backgroundColor: gettingLocation ? `${brandColors.accentStart}40` : brandColors.accentStart,
+                  paddingVertical: spacing.lg,
+                  borderRadius: radius.lg,
+                  marginBottom: spacing.xl,
+                }}
+              >
+                {gettingLocation ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <Locate size={20} color="#FFFFFF" strokeWidth={2} />
+                    <Text
+                      style={{
+                        fontSize: typography.sizes.md,
+                        fontWeight: typography.weights.semibold,
+                        color: "#FFFFFF",
+                      }}
+                    >
+                      {propLat && propLng ? "📍 Update My Location" : "📍 Get My Current Location"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {propLat && propLng && (
+                <View
+                  style={{
+                    backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)",
+                    borderRadius: radius.md,
+                    padding: spacing.md,
+                    marginBottom: spacing.xl,
+                  }}
+                >
+                  <Text style={{ fontSize: typography.sizes.xs, color: colors.secondaryText, marginBottom: 2 }}>
+                    Coordinates captured:
+                  </Text>
+                  <Text style={{ fontSize: typography.sizes.sm, color: colors.text }}>
+                    {parseFloat(propLat).toFixed(6)}, {parseFloat(propLng).toFixed(6)}
+                  </Text>
+                </View>
+              )}
 
               {[
                 { label: "Property Name *", value: propName, setter: setPropName, placeholder: "e.g. Sunrise Apartments" },
                 { label: "Address *", value: propAddress, setter: setPropAddress, placeholder: "123 Main St, City, State" },
-                { label: "Latitude *", value: propLat, setter: setPropLat, placeholder: "e.g. 40.7128", keyboard: "numeric" },
-                { label: "Longitude *", value: propLng, setter: setPropLng, placeholder: "e.g. -74.0060", keyboard: "numeric" },
-              ].map(({ label, value, setter, placeholder, keyboard }) => (
+              ].map(({ label, value, setter, placeholder }) => (
                 <View key={label} style={{ marginBottom: spacing.lg }}>
                   <Text style={labelStyle}>{label}</Text>
                   <TextInput
@@ -258,58 +472,151 @@ export default function AssignPropertyScreen() {
                     onChangeText={setter}
                     placeholder={placeholder}
                     placeholderTextColor={colors.placeholderText}
-                    keyboardType={keyboard ?? "default"}
-                    style={[inputStyle, { color: colors.text, backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.03)", borderColor: colors.border }]}
+                    style={[
+                      inputStyle,
+                      {
+                        color: colors.text,
+                        backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.03)",
+                        borderColor: colors.border,
+                      },
+                    ]}
                   />
                 </View>
               ))}
 
-              <Text style={[labelStyle, { marginBottom: spacing.sm }]}>Assign Manager *</Text>
-              {managers.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  onPress={() => setSelectedManagerId(m.id)}
-                  activeOpacity={0.8}
+              {/* Advanced: Manual coordinates */}
+              <TouchableOpacity
+                onPress={() => setShowAdvanced(!showAdvanced)}
+                style={{ marginBottom: spacing.md }}
+              >
+                <Text style={{ fontSize: typography.sizes.sm, color: brandColors.accentStart }}>
+                  {showAdvanced ? "▼" : "▶"} Advanced: Enter coordinates manually
+                </Text>
+              </TouchableOpacity>
+
+              {showAdvanced && (
+                <View
                   style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    padding: spacing.lg,
+                    backgroundColor: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
                     borderRadius: radius.md,
-                    borderWidth: 1,
-                    borderColor: selectedManagerId === m.id ? brandColors.accentStart : colors.border,
-                    backgroundColor: selectedManagerId === m.id ? `${brandColors.accentStart}12` : "transparent",
-                    marginBottom: spacing.sm,
-                    gap: spacing.md,
+                    padding: spacing.md,
+                    marginBottom: spacing.lg,
                   }}
                 >
-                  <View style={{
-                    width: 20, height: 20, borderRadius: 10,
-                    borderWidth: 2,
-                    borderColor: selectedManagerId === m.id ? brandColors.accentStart : colors.border,
-                    alignItems: "center", justifyContent: "center",
-                  }}>
-                    {selectedManagerId === m.id && (
-                      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: brandColors.accentStart }} />
-                    )}
-                  </View>
-                  <View>
-                    <Text style={{ fontSize: typography.sizes.md, fontWeight: typography.weights.medium, color: colors.text }}>{m.name}</Text>
-                    <Text style={{ fontSize: typography.sizes.xs, color: colors.secondaryText }}>{m.phone_number}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                  {[
+                    { label: "Latitude", value: propLat, setter: setPropLat, placeholder: "e.g. 40.7128", keyboard: "numeric" },
+                    { label: "Longitude", value: propLng, setter: setPropLng, placeholder: "e.g. -74.0060", keyboard: "numeric" },
+                  ].map(({ label, value, setter, placeholder, keyboard }) => (
+                    <View key={label} style={{ marginBottom: spacing.sm }}>
+                      <Text style={[labelStyle, { fontSize: typography.sizes.xs }]}>{label}</Text>
+                      <TextInput
+                        value={value}
+                        onChangeText={setter}
+                        placeholder={placeholder}
+                        placeholderTextColor={colors.placeholderText}
+                        keyboardType={keyboard ?? "default"}
+                        style={[
+                          inputStyle,
+                          {
+                            color: colors.text,
+                            backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.03)",
+                            borderColor: colors.border,
+                            paddingVertical: spacing.sm,
+                          },
+                        ]}
+                      />
+                    </View>
+                  ))}
+                </View>
+              )}
 
-              <TouchableOpacity onPress={handleCreate} disabled={createMutation.isPending} activeOpacity={0.85} style={{ marginTop: spacing.xl }}>
+              <Text style={[labelStyle, { marginBottom: spacing.sm }]}>Assign Manager *</Text>
+              {managers.length === 0 ? (
+                <View
+                  style={{
+                    backgroundColor: colors.errorBg || "rgba(196,112,112,0.15)",
+                    borderRadius: radius.md,
+                    padding: spacing.lg,
+                    marginBottom: spacing.xl,
+                  }}
+                >
+                  <Text style={{ fontSize: typography.sizes.sm, color: brandColors.error }}>
+                    No managers available. Please create a manager account first via the web admin panel.
+                  </Text>
+                </View>
+              ) : (
+                managers.map((m) => (
+                  <TouchableOpacity
+                    key={m.id}
+                    onPress={() => setSelectedManagerId(m.id)}
+                    activeOpacity={0.8}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      padding: spacing.lg,
+                      borderRadius: radius.md,
+                      borderWidth: 1,
+                      borderColor: selectedManagerId === m.id ? brandColors.accentStart : colors.border,
+                      backgroundColor: selectedManagerId === m.id ? `${brandColors.accentStart}12` : "transparent",
+                      marginBottom: spacing.sm,
+                      gap: spacing.md,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 10,
+                        borderWidth: 2,
+                        borderColor: selectedManagerId === m.id ? brandColors.accentStart : colors.border,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {selectedManagerId === m.id && (
+                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: brandColors.accentStart }} />
+                      )}
+                    </View>
+                    <View>
+                      <Text
+                        style={{ fontSize: typography.sizes.md, fontWeight: typography.weights.medium, color: colors.text }}
+                      >
+                        {m.name}
+                      </Text>
+                      <Text style={{ fontSize: typography.sizes.xs, color: colors.secondaryText }}>
+                        {m.phone_number}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+
+              <TouchableOpacity
+                onPress={handleCreate}
+                disabled={createMutation.isPending || managers.length === 0}
+                activeOpacity={0.85}
+                style={{ marginTop: spacing.xl }}
+              >
                 <LinearGradient
                   colors={[brandColors.accentStart, brandColors.accentEnd]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
-                  style={{ paddingVertical: 17, borderRadius: radius.lg, alignItems: "center", opacity: createMutation.isPending ? 0.7 : 1 }}
+                  style={{
+                    paddingVertical: 17,
+                    borderRadius: radius.lg,
+                    alignItems: "center",
+                    opacity: createMutation.isPending || managers.length === 0 ? 0.5 : 1,
+                  }}
                 >
-                  {createMutation.isPending
-                    ? <ActivityIndicator color="#FFFFFF" />
-                    : <Text style={{ fontSize: typography.sizes.lg, fontWeight: typography.weights.semibold, color: "#FFFFFF" }}>Create Property</Text>
-                  }
+                  {createMutation.isPending ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text
+                      style={{ fontSize: typography.sizes.lg, fontWeight: typography.weights.semibold, color: "#FFFFFF" }}
+                    >
+                      Create Property
+                    </Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
             </ScrollView>
