@@ -64,7 +64,7 @@ export async function POST(request) {
       );
     }
 
-    const isValid = await bcrypt.compare(accounts[0].password, password);
+    const isValid = await bcrypt.compare(password, accounts[0].password);
     if (!isValid) {
       return Response.json(
         { error: "Invalid phone number or password" },

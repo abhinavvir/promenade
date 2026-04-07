@@ -29,6 +29,7 @@ export default defineConfig({
       '@auth/core/errors',
       'fsevents',
       'lightningcss',
+      '@resolid/react-router-hono',
     ],
   },
   logLevel: 'info',

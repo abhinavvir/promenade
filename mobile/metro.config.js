@@ -48,6 +48,12 @@ const SHARED_ALIASES = {
 };
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Handle @/ path aliases (tsconfig: @/* -> ./src/*)
+  if (moduleName.startsWith('@/')) {
+    const resolvedPath = path.resolve(__dirname, 'src', moduleName.slice(2));
+    return context.resolveRequest(context, resolvedPath, platform);
+  }
+
   // Skip polyfill directories themselves
   if (
     context.originModulePath.startsWith(`${__dirname}/polyfills/native`) ||

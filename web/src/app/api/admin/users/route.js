@@ -1,5 +1,14 @@
 import sql from "@/app/api/utils/sql";
 import bcrypt from "bcryptjs";
+import { auth } from "@/auth";
+import { getRequestUser } from "@/app/api/utils/mobile-auth";
+
+async function requireAdmin(request) {
+  const user = await getRequestUser(request, auth);
+  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (user.role !== "admin") return Response.json({ error: "Forbidden" }, { status: 403 });
+  return null;
+}
 
 // Generate a random temporary password
 function generateTempPassword() {
@@ -19,6 +28,9 @@ function generateTempPassword() {
 }
 
 export async function GET(request) {
+  const authError = await requireAdmin(request);
+  if (authError) return authError;
+
   try {
     const users = await sql`
       SELECT 
@@ -50,6 +62,9 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const authError = await requireAdmin(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const { name, phoneNumber, email } = body;
@@ -128,6 +143,9 @@ export async function POST(request) {
 }
 
 export async function DELETE(request) {
+  const authError = await requireAdmin(request);
+  if (authError) return authError;
+
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
@@ -151,6 +169,9 @@ export async function DELETE(request) {
 }
 
 export async function PATCH(request) {
+  const authError = await requireAdmin(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const { userId } = body;

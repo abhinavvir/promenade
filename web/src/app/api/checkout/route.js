@@ -1,13 +1,18 @@
 import sql from "@/app/api/utils/sql";
+import { auth } from "@/auth";
+import { getRequestUser } from "@/app/api/utils/mobile-auth";
 
 export async function POST(request) {
+  const requestUser = await getRequestUser(request, auth);
+  if (!requestUser) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
-    const { userId, latitude, longitude } = body;
-
-    if (!userId) {
-      return Response.json({ error: "User ID required" }, { status: 400 });
-    }
+    const { latitude, longitude } = body;
+    // Always use the authenticated user's ID — never trust userId from body
+    const userId = requestUser.id;
 
     // Find the active check-in
     const activeCheckIn = await sql`
@@ -30,7 +35,7 @@ export async function POST(request) {
     // Update the check-in record with checkout info
     const result = await sql`
       UPDATE check_ins
-      SET 
+      SET
         check_out_time = NOW(),
         check_out_latitude = ${latitude || null},
         check_out_longitude = ${longitude || null},

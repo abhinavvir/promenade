@@ -1,32 +1,21 @@
 import sql from "@/app/api/utils/sql";
+import { auth } from "@/auth";
+import { getRequestUser } from "@/app/api/utils/mobile-auth";
 
 export async function GET(request) {
+  const requestUser = await getRequestUser(request, auth);
+  if (!requestUser) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (requestUser.role !== "admin") return Response.json({ error: "Forbidden" }, { status: 403 });
+
   try {
-    // Get query parameters for filtering
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "50");
     const offset = parseInt(searchParams.get("offset") || "0");
     const userId = searchParams.get("userId");
     const propertyId = searchParams.get("propertyId");
 
-    // Build query with filters
-    let whereConditions =
-      "WHERE a.action IN ('sign_in_attempt', 'location_verification', 'check_in', 'check_out')";
-    const params = [];
-
-    if (userId) {
-      whereConditions += ` AND a.user_id = $${params.length + 1}`;
-      params.push(parseInt(userId));
-    }
-
-    if (propertyId) {
-      whereConditions += ` AND a.property_id = $${params.length + 1}`;
-      params.push(parseInt(propertyId));
-    }
-
-    const logs = await sql(
-      `
-      SELECT 
+    const logs = await sql`
+      SELECT
         a.id,
         a.user_id,
         a.property_id,
@@ -47,26 +36,24 @@ export async function GET(request) {
       FROM audit_logs a
       LEFT JOIN auth_users u ON a.user_id = u.id
       LEFT JOIN properties p ON a.property_id = p.id
-      ${whereConditions}
+      WHERE a.action IN ('sign_in_attempt', 'location_verification', 'check_in', 'check_out')
+      ${userId ? sql`AND a.user_id = ${parseInt(userId)}` : sql``}
+      ${propertyId ? sql`AND a.property_id = ${parseInt(propertyId)}` : sql``}
       ORDER BY a.created_at DESC
-      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-    `,
-      [...params, limit, offset],
-    );
+      LIMIT ${limit} OFFSET ${offset}
+    `;
 
-    // Get total count
-    const countResult = await sql(
-      `
+    const countResult = await sql`
       SELECT COUNT(*) as total
       FROM audit_logs a
-      ${whereConditions}
-    `,
-      params,
-    );
+      WHERE a.action IN ('sign_in_attempt', 'location_verification', 'check_in', 'check_out')
+      ${userId ? sql`AND a.user_id = ${parseInt(userId)}` : sql``}
+      ${propertyId ? sql`AND a.property_id = ${parseInt(propertyId)}` : sql``}
+    `;
 
     return Response.json({
       logs,
-      total: parseInt(countResult[0].total),
+      total: parseInt(countResult[0]?.total ?? '0'),
       limit,
       offset,
     });

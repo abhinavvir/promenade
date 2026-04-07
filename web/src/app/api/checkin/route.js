@@ -1,13 +1,22 @@
 import sql from "@/app/api/utils/sql";
+import { auth } from "@/auth";
+import { getRequestUser } from "@/app/api/utils/mobile-auth";
 
 export async function POST(request) {
+  const requestUser = await getRequestUser(request, auth);
+  if (!requestUser) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
-    const { userId, propertyId, latitude, longitude } = body;
+    const { propertyId, latitude, longitude } = body;
+    // Always use the authenticated user's ID — never trust userId from body
+    const userId = requestUser.id;
 
-    if (!userId || !propertyId) {
+    if (!propertyId) {
       return Response.json(
-        { error: "User ID and property ID required" },
+        { error: "Property ID required" },
         { status: 400 },
       );
     }

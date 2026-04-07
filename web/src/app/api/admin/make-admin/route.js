@@ -1,6 +1,16 @@
 import sql from "@/app/api/utils/sql";
+import { auth } from "@/auth";
+import { getRequestUser } from "@/app/api/utils/mobile-auth";
 
 export async function POST(request) {
+  const requestUser = await getRequestUser(request, auth);
+  if (!requestUser) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (requestUser.role !== "admin") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { email } = body;
