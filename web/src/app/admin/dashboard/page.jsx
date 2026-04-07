@@ -26,9 +26,18 @@ export default function AdminDashboard() {
   });
 
   useEffect(() => {
-    if (!userLoading && user) {
-      fetchData();
+    if (userLoading) return;
+    if (!user) {
+      window.location.href = "/account/signin";
+      return;
     }
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(({ user: me }) => {
+        if (me?.role !== "admin") window.location.href = "/account/signin";
+        else fetchData();
+      })
+      .catch(() => { window.location.href = "/account/signin"; });
   }, [user, userLoading]);
 
   const fetchData = async () => {

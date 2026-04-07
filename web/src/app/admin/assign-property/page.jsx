@@ -56,15 +56,21 @@ export default function AssignPropertyPage() {
   const [mapZoom, setMapZoom] = useState(12);
 
   useEffect(() => {
-    fetchUsers();
-    // Pre-select user from URL query parameter
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const userId = params.get("userId");
-      if (userId) {
-        setSelectedUserId(userId);
-      }
-    }
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(({ user: me }) => {
+        if (me?.role !== "admin") {
+          window.location.href = "/account/signin";
+        } else {
+          fetchUsers();
+          if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            const userId = params.get("userId");
+            if (userId) setSelectedUserId(userId);
+          }
+        }
+      })
+      .catch(() => { window.location.href = "/account/signin"; });
   }, []);
 
   const fetchUsers = async () => {

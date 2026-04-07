@@ -49,12 +49,26 @@ function MainComponent() {
       const result = await signInWithCredentials({
         email,
         password,
-        callbackUrl: "/admin/dashboard",
-        redirect: true,
+        redirect: false,
       });
 
       if (result?.error) {
         throw new Error(result.error);
+      }
+
+      // Check role and redirect accordingly
+      const meRes = await fetch("/api/auth/me");
+      if (meRes.ok) {
+        const { user: me } = await meRes.json();
+        if (me?.role === "admin") {
+          window.location.href = "/admin/dashboard";
+        } else {
+          setError("This portal is for administrators only. Please use the mobile app.");
+          setLoading(false);
+          return;
+        }
+      } else {
+        window.location.href = "/admin/dashboard";
       }
     } catch (err) {
       console.error("Sign-in error:", err);
@@ -102,16 +116,16 @@ function MainComponent() {
         <div className="space-y-6">
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">
-              Admin Email
+              Email or Phone
             </label>
             <div className="overflow-hidden rounded-lg border border-gray-200 bg-white px-4 py-3 focus-within:border-[#357AFF] focus-within:ring-1 focus-within:ring-[#357AFF]">
               <input
                 required
                 name="email"
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@example.com"
+                placeholder="admin@example.com or +1 555 000 1234"
                 className="w-full bg-transparent text-lg outline-none"
               />
             </div>

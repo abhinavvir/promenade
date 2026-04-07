@@ -29,7 +29,13 @@ export default function ManageUsersPage() {
   const [manageSuccess, setManageSuccess] = useState(null);
 
   useEffect(() => {
-    fetchData();
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(({ user: me }) => {
+        if (me?.role !== "admin") window.location.href = "/account/signin";
+        else fetchData();
+      })
+      .catch(() => { window.location.href = "/account/signin"; });
   }, []);
 
   const fetchData = async () => {

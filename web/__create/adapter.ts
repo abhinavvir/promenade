@@ -90,7 +90,7 @@ export default function NeonAdapter(client: Pool): NeonAdapter {
       }
     },
     async getUserByEmail(email) {
-      const sql = 'select * from auth_users where email = $1';
+      const sql = 'select * from auth_users where email = $1 OR phone_number = $1';
       const result = await client.query(sql, [email]);
       if (result.rowCount === 0) {
         return null;
