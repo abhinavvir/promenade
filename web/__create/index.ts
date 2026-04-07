@@ -98,11 +98,20 @@ if (process.env.AUTH_SECRET) {
         strategy: 'jwt',
       },
       callbacks: {
-        session({ session, token }) {
+        async session({ session, token }) {
           if (token.sub) {
             session.user.id = token.sub;
           }
+          if (token.role) {
+            session.user.role = token.role;
+          }
           return session;
+        },
+        async jwt({ token, user }) {
+          if (user) {
+            token.role = user.role;
+          }
+          return token;
         },
       },
       cookies: {
