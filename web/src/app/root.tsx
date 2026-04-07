@@ -249,26 +249,6 @@ function LoaderWrapper({ loader }: { loader: () => React.ReactNode }) {
   return <>{loader()}</>;
 }
 
-type ClientOnlyProps = {
-  loader: () => React.ReactNode;
-};
-
-export const ClientOnly: React.FC<ClientOnlyProps> = ({ loader }) => {
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  if (!isMounted) return null;
-
-  return (
-    <ErrorBoundaryWrapper>
-      <LoaderWrapper loader={loader} />
-    </ErrorBoundaryWrapper>
-  );
-};
-
 /**
  * useHmrConnection()
  * ------------------
@@ -442,7 +422,7 @@ export function Layout({ children }: { children: ReactNode }) {
         {LoadFontsSSR ? <LoadFontsSSR /> : null}
       </head>
       <body>
-        <ClientOnly loader={() => children} />
+        <ErrorBoundaryWrapper>{children}</ErrorBoundaryWrapper>
         <Toaster position={isMobile ? 'top-center' : 'bottom-right'} />
         <ScrollRestoration />
         <Scripts />
