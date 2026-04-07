@@ -1,30 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useMapEvents } from "react-leaflet";
 
-// Lazy load Leaflet components to avoid SSR issues
-const MapContainer = lazy(() => import("react-leaflet").then((m) => ({ default: m.MapContainer })));
-const TileLayer = lazy(() => import("react-leaflet").then((m) => ({ default: m.TileLayer })));
-const Marker = lazy(() => import("react-leaflet").then((m) => ({ default: m.Marker })));
-const useMapEvents = lazy(() => import("react-leaflet").then((m) => ({ default: m.useMapEvents })));
-
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-
-// Fix for default marker icons in Leaflet with Vite
-if (typeof window !== "undefined") {
-  delete L.Icon.Default.prototype._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  });
-}
-
-function MapClickHandler({ onMapClick }) {
-  const UseMapEvents = require("react-leaflet").useMapEvents;
-  return <UseMapEvents events={{ click: (e) => onMapClick({ detail: { latLng: e.latlng } }) }} />;
-}
+// We'll lazy load the entire map implementation
+const LazyMap = lazy(() =>
+  import("./components/PropertyMap").then((m) => ({ default: m.PropertyMap }))
+);
 
 function AddressSearch({ onPlaceSelect, onError }) {
   const [query, setQuery] = useState("");
@@ -34,7 +16,6 @@ function AddressSearch({ onPlaceSelect, onError }) {
   const inputRef = useRef(null);
   const resultsRef = useRef(null);
 
-  // Close results when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (resultsRef.current && !resultsRef.current.contains(e.target) && !inputRef.current.contains(e.target)) {
@@ -189,7 +170,6 @@ export default function AssignPropertyPage() {
       const data = await response.json();
       setUsers(data.users || []);
 
-      // Show helpful message if no managers exist
       if ((data.users || []).length === 0) {
         setError(
           "No managers found. Please create a manager account first via Manage Users.",
@@ -218,8 +198,6 @@ export default function AssignPropertyPage() {
     setPropertyAddress(place.formatted_address || "");
     setPropertyName(place.name || "");
     setError(null);
-
-    // Force map remount to center on new location
     setMapKey((prev) => prev + 1);
   };
 
@@ -228,7 +206,6 @@ export default function AssignPropertyPage() {
     const lng = event.detail.latLng.lng;
     setSelectedLocation({ lat, lng });
 
-    // Reverse geocode to get address
     fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
       {
@@ -289,7 +266,6 @@ export default function AssignPropertyPage() {
         setMessage(
           `✅ Success! Property "${propertyName}" assigned to manager. <a href="/admin/manage-users" class="underline">Back to Manage Users</a>`,
         );
-        // Reset form
         setPropertyName("");
         setPropertyAddress("");
         setSelectedLocation(null);
@@ -365,23 +341,13 @@ export default function AssignPropertyPage() {
                         </div>
                       }
                     >
-                      <MapContainer
+                      <LazyMap
                         key={mapKey}
                         center={mapCenter}
                         zoom={mapZoom}
-                        style={{ height: "400px", width: "100%" }}
-                        scrollWheelZoom={false}
-                        whenReady={() => setMapLoaded(true)}
-                      >
-                        <TileLayer
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        />
-                        <MapClickHandler onMapClick={handleMapClick} />
-                        {selectedLocation && (
-                          <Marker position={[selectedLocation.lat, selectedLocation.lng]} />
-                        )}
-                      </MapContainer>
+                        onClick={handleMapClick}
+                        selectedLocation={selectedLocation}
+                      />
                     </Suspense>
                   ) : (
                     <div
