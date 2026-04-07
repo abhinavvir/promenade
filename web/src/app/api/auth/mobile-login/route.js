@@ -64,7 +64,17 @@ export async function POST(request) {
       );
     }
 
-    const isValid = await bcrypt.compare(password, accounts[0].password);
+    let isValid;
+    try {
+      isValid = await bcrypt.compare(password, accounts[0].password);
+    } catch (bcryptError) {
+      console.error("Bcrypt error:", bcryptError);
+      return Response.json(
+        { error: "Authentication service error" },
+        { status: 500 },
+      );
+    }
+
     if (!isValid) {
       return Response.json(
         { error: "Invalid phone number or password" },
@@ -92,6 +102,10 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error("POST /api/auth/mobile-login error:", error);
-    return Response.json({ error: "Internal server error" }, { status: 500 });
+    console.error("Error details:", error?.message, error?.stack);
+    return Response.json({
+      error: "Internal server error",
+      details: error?.message || "Unknown error"
+    }, { status: 500 });
   }
 }
