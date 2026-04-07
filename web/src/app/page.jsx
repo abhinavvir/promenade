@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect } from "react";
 import { useNavigate } from "react-router";
 
@@ -7,19 +5,23 @@ export default function Page() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if user is authenticated and redirect appropriately
-    fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then(({ user: me }) => {
-        if (me?.role === "admin") {
-          navigate("/admin/dashboard", { replace: true });
-        } else {
+    // Small delay to ensure client-side hydration is complete
+    const timer = setTimeout(() => {
+      fetch("/api/auth/me")
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then(({ user: me }) => {
+          if (me?.role === "admin") {
+            navigate("/admin/dashboard", { replace: true });
+          } else {
+            navigate("/account/signin", { replace: true });
+          }
+        })
+        .catch(() => {
           navigate("/account/signin", { replace: true });
-        }
-      })
-      .catch(() => {
-        navigate("/account/signin", { replace: true });
-      });
+        });
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, [navigate]);
 
   return (
