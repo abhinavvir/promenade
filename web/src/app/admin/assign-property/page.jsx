@@ -7,157 +7,11 @@ const LazyMap = lazy(() =>
   import("./components/PropertyMap").then((m) => ({ default: m.PropertyMap }))
 );
 
-function AddressSearch({ onPlaceSelect, onError }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [showResults, setShowResults] = useState(false);
-  const inputRef = useRef(null);
-  const resultsRef = useRef(null);
-  const searchTimeoutRef = useRef(null);
-
-  // Close results when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (resultsRef.current && !resultsRef.current.contains(e.target) && !inputRef.current.contains(e.target)) {
-        setShowResults(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const searchAddress = async (searchQuery) => {
-    if (!searchQuery.trim() || searchQuery.trim().length < 3) {
-      setResults([]);
-      setShowResults(false);
-      return;
-    }
-
-    // Clear previous timeout
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    setSearching(true);
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5&addressdetails=1`,
-        {
-          headers: {
-            "User-Agent": "Promenade-Property-Manager",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Search failed");
-      }
-
-      const data = await response.json();
-      setResults(data);
-      setShowResults(true);
-    } catch (err) {
-      console.error("Nominatim error:", err);
-      // Don't show error for autocomplete, just silently fail
-      setResults([]);
-      setShowResults(false);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  // Debounced search
-  const handleChange = (text) => {
-    setQuery(text);
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-    searchTimeoutRef.current = setTimeout(() => {
-      searchAddress(text);
-    }, 300);
-  };
-
-  const handleSelectPlace = (place) => {
-    const lat = parseFloat(place.lat);
-    const lon = parseFloat(place.lon);
-
-    onPlaceSelect({
-      lat,
-      lon,
-      address: place.display_name,
-    });
-
-    setQuery(place.display_name);
-    setShowResults(false);
-    setResults([]);
-  };
-
-  return (
-    <div className="relative">
-      <input
-        ref={inputRef}
-        type="text"
-        value={query}
-        onChange={(e) => handleChange(e.target.value)}
-        onFocus={() => {
-          if (results.length > 0) setShowResults(true);
-        }}
-        placeholder="Start typing address..."
-        autoComplete="off"
-        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
-      />
-      {searching && (
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">
-          Searching...
-        </span>
-      )}
-
-      {showResults && results.length > 0 && (
-        <div
-          ref={resultsRef}
-          className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
-        >
-          {results.map((place, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleSelectPlace(place)}
-              className="w-full border-b border-gray-100 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 last:border-0"
-            >
-              <div className="font-medium text-gray-900">
-                {place.display_name.split(",")[0]}
-              </div>
-              <div className="truncate text-xs text-gray-500">{place.display_name}</div>
-              <div className="mt-1 flex gap-2 text-xs text-gray-400">
-                {place.address?.state && (
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5">
-                    {place.address.state}
-                  </span>
-                )}
-                {place.address?.country && (
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5">
-                    {place.address.country}
-                  </span>
-                )}
-              </div>
-            </button>
-          ))}
-          {results.length === 0 && query.length >= 3 && !searching && (
-            <div className="px-4 py-3 text-sm text-gray-500 text-center">
-              No results found. Try a different search term.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function AssignPropertyPage() {
   const [users, setUsers] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [propertyName, setPropertyName] = useState("");
+  const [addressQuery, setAddressQuery] = useState("");
   const [propertyAddress, setPropertyAddress] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -169,6 +23,14 @@ export default function AssignPropertyPage() {
   const [mapKey, setMapKey] = useState(0);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
+
+  // Address autocomplete states
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const addressInputRef = useRef(null);
+  const resultsRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -190,6 +52,22 @@ export default function AssignPropertyPage() {
       });
   }, []);
 
+  // Close results when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (
+        resultsRef.current &&
+        !resultsRef.current.contains(e.target) &&
+        addressInputRef.current &&
+        !addressInputRef.current.contains(e.target)
+      ) {
+        setShowSearchResults(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const fetchUsers = async () => {
     try {
       setFetchingUsers(true);
@@ -203,20 +81,85 @@ export default function AssignPropertyPage() {
       setUsers(data.users || []);
     } catch (err) {
       console.error("Error fetching users:", err);
-      // Don't show error for user fetch, just log it
       setUsers([]);
     } finally {
       setFetchingUsers(false);
     }
   };
 
-  const handlePlaceSelect = (place) => {
-    const { lat, lon, address } = place;
+  // Search address using Nominatim (OpenStreetMap)
+  const searchAddress = async (query) => {
+    if (!query.trim() || query.trim().length < 3) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
 
+    setSearching(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          query
+        )}&limit=5&addressdetails=1`,
+        {
+          headers: {
+            "User-Agent": "Promenade-Property-Manager",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Search failed");
+      }
+
+      const data = await response.json();
+      setSearchResults(data);
+      setShowSearchResults(true);
+    } catch (err) {
+      console.error("Nominatim error:", err);
+      setSearchResults([]);
+      setShowSearchResults(false);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Debounced search for address
+  const handleAddressChange = (text) => {
+    setAddressQuery(text);
+    setPropertyAddress(text); // Keep in sync
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      searchAddress(text);
+    }, 300);
+  };
+
+  const handleSelectAddress = (place) => {
+    const lat = parseFloat(place.lat);
+    const lon = parseFloat(place.lon);
+
+    // Update location
     setSelectedLocation({ lat, lon });
     setMapCenter([lat, lon]);
     setMapZoom(16);
-    setPropertyAddress(address);
+
+    // Update address field
+    setPropertyAddress(place.display_name);
+    setAddressQuery(place.display_name);
+
+    // Extract property name from address (first part before comma)
+    const nameParts = place.display_name.split(",");
+    const extractedName = nameParts[0]?.trim() || "";
+    if (extractedName && !propertyName) {
+      setPropertyName(extractedName);
+    }
+
+    setShowSearchResults(false);
+    setSearchResults([]);
     setError(null);
     setMapKey((prev) => prev + 1);
   };
@@ -238,7 +181,6 @@ export default function AssignPropertyPage() {
         setMapCenter([latitude, longitude]);
         setMapZoom(16);
 
-        // Only update lat/lon - don't touch address or name
         setError(null);
         setGettingLocation(false);
       },
@@ -273,7 +215,7 @@ export default function AssignPropertyPage() {
     setError(null);
 
     if (!selectedLocation) {
-      setError("Please select a location using 'Get My Location', map click, or address search.");
+      setError("Please select a location using the address search, 'Get My Location', or map click.");
       setLoading(false);
       return;
     }
@@ -331,7 +273,6 @@ export default function AssignPropertyPage() {
             address: propertyAddress.trim(),
             latitude: selectedLocation.lat,
             longitude: selectedLocation.lng,
-            // No managerId - property will be unassigned
           }),
         });
 
@@ -356,6 +297,7 @@ export default function AssignPropertyPage() {
 
   const resetForm = () => {
     setPropertyName("");
+    setAddressQuery("");
     setPropertyAddress("");
     setSelectedLocation(null);
     setSelectedUserId("");
@@ -364,6 +306,8 @@ export default function AssignPropertyPage() {
     setMapKey((prev) => prev + 1);
     setMessage(null);
     setError(null);
+    setSearchResults([]);
+    setShowSearchResults(false);
   };
 
   if (fetchingUsers) {
@@ -399,7 +343,7 @@ export default function AssignPropertyPage() {
             <div className="space-y-4">
               <div className="space-y-3">
                 <label className="mb-2 block text-sm font-medium text-gray-700">
-                  📍 Get My Location
+                  📍 Get My Location (coordinates only)
                 </label>
                 <button
                   type="button"
@@ -415,7 +359,7 @@ export default function AssignPropertyPage() {
                   ) : (
                     <>
                       <span className="mr-2">📍</span>
-                      Update my location (latitude & longitude only)
+                      Update my location
                     </>
                   )}
                 </button>
@@ -426,17 +370,7 @@ export default function AssignPropertyPage() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700">
-                  🔍 Search Address (auto-fills all fields)
-                </label>
-                <AddressSearch onPlaceSelect={handlePlaceSelect} onError={setError} />
-                <p className="mt-1 text-xs text-gray-500">
-                  Powered by OpenStreetMap • Start typing to see suggestions
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Or Click on Map (sets coordinates only)
+                  🗺️ Map (click to set coordinates)
                 </label>
                 <div className="overflow-hidden rounded-lg border-2 border-gray-200 shadow-lg">
                   {mapLoaded ? (
@@ -474,7 +408,8 @@ export default function AssignPropertyPage() {
                 </div>
                 {selectedLocation && (
                   <div className="mt-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-700">
-                    📍 Coordinates: {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                    📍 Coordinates: {selectedLocation.lat.toFixed(6)},{" "}
+                    {selectedLocation.lng.toFixed(6)}
                   </div>
                 )}
               </div>
@@ -495,22 +430,75 @@ export default function AssignPropertyPage() {
                     className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
                     placeholder="e.g. Sunset Apartments"
                   />
+                  <p className="text-xs text-gray-500">
+                    Auto-filled from address search, or enter manually
+                  </p>
                 </div>
 
+                {/* Address Search with Autocomplete */}
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
                     Address <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={propertyAddress}
-                    onChange={(e) => setPropertyAddress(e.target.value)}
-                    required
-                    className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
-                    placeholder="e.g. 123 Ocean Drive, Miami Beach, FL"
-                  />
+                  <div className="relative">
+                    <input
+                      ref={addressInputRef}
+                      type="text"
+                      value={addressQuery}
+                      onChange={(e) => handleAddressChange(e.target.value)}
+                      onFocus={() => {
+                        if (searchResults.length > 0) setShowSearchResults(true);
+                      }}
+                      placeholder="Start typing address..."
+                      autoComplete="off"
+                      required
+                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
+                    />
+                    {searching && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">
+                        Searching...
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Autocomplete Dropdown */}
+                  {showSearchResults && searchResults.length > 0 && (
+                    <div
+                      ref={resultsRef}
+                      className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
+                      style={{ maxWidth: "500px" }}
+                    >
+                      {searchResults.map((place, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleSelectAddress(place)}
+                          className="w-full border-b border-gray-100 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 last:border-0"
+                        >
+                          <div className="font-medium text-gray-900">
+                            {place.display_name.split(",")[0]}
+                          </div>
+                          <div className="truncate text-xs text-gray-500">
+                            {place.display_name}
+                          </div>
+                          <div className="mt-1 flex gap-2 text-xs text-gray-400">
+                            {place.address?.state && (
+                              <span className="rounded bg-gray-100 px-1.5 py-0.5">
+                                {place.address.state}
+                              </span>
+                            )}
+                            {place.address?.country && (
+                              <span className="rounded bg-gray-100 px-1.5 py-0.5">
+                                {place.address.country}
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-xs text-gray-500">
-                    Type to search, use "Get My Location", or click on map
+                    🔍 Start typing to see suggestions • Powered by OpenStreetMap
                   </p>
                 </div>
 
@@ -565,11 +553,11 @@ export default function AssignPropertyPage() {
                   💡 Instructions
                 </h3>
                 <ul className="space-y-1 text-xs text-gray-600">
-                  <li>1. "Get My Location" - auto-fills coordinates only</li>
-                  <li>2. Search address - auto-fills all fields including name</li>
-                  <li>3. Click on map - sets coordinates only</li>
-                  <li>4. Enter property name manually (required)</li>
-                  <li>5. Optionally assign to a manager</li>
+                  <li>1. <strong>Address field</strong> - start typing for autocomplete suggestions (fills all fields)</li>
+                  <li>2. <strong>Get My Location</strong> - auto-fills coordinates only</li>
+                  <li>3. <strong>Map click</strong> - sets coordinates only</li>
+                  <li>4. <strong>Property Name</strong> - auto-filled from address or enter manually</li>
+                  <li>5. Assigning a manager is optional</li>
                 </ul>
               </div>
             </div>

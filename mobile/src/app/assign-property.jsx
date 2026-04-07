@@ -12,7 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react-native";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +37,9 @@ export default function AssignPropertyScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+
+  // Ref for debouncing search
+  const searchTimeoutRef = useRef(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [propName, setPropName] = useState("");
@@ -121,6 +124,11 @@ export default function AssignPropertyScreen() {
       return;
     }
 
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
     setSearching(true);
     try {
       const response = await fetch(
@@ -146,6 +154,21 @@ export default function AssignPropertyScreen() {
     } finally {
       setSearching(false);
     }
+  };
+
+  // Debounced search handler
+  const handleAddressChange = (text) => {
+    setSearchQuery(text);
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Set new timeout for search
+    searchTimeoutRef.current = setTimeout(() => {
+      searchAddress(text);
+    }, 300);
   };
 
   const getCurrentLocation = async () => {
@@ -502,12 +525,7 @@ export default function AssignPropertyScreen() {
                 <View style={{ position: "relative" }}>
                   <TextInput
                     value={searchQuery}
-                    onChangeText={(text) => {
-                      setSearchQuery(text);
-                      // Debounced search
-                      const timeoutId = setTimeout(() => searchAddress(text), 300);
-                      return () => clearTimeout(timeoutId);
-                    }}
+                    onChangeText={handleAddressChange}
                     placeholder="Start typing address..."
                     placeholderTextColor={colors.placeholderText}
                     style={[
