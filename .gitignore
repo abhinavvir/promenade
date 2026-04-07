@@ -48,3 +48,4 @@ mobile/android/build/
 out/
 web/.react-router/
 web/.vitest/
+.vercel
