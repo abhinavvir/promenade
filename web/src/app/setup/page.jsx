@@ -27,14 +27,21 @@ export default function SetupPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, phone, password }),
       });
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => "");
+        setError(`Server error (${res.status}). Check Vercel logs. ${text.slice(0, 100)}`);
+        return;
+      }
       if (!res.ok) {
         setError(data.error || "Something went wrong.");
       } else {
         setStatus("done");
       }
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (e) {
+      setError("Network error: " + (e.message || "Please try again."));
     } finally {
       setLoading(false);
     }
