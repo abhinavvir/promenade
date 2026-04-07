@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Promenade — App Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #111;
+      background: #fafafa;
+      line-height: 1.6;
+    }
+    .hero {
+      background: linear-gradient(135deg, #1e3a5f 0%, #357AFF 100%);
+      color: #fff;
+      padding: 72px 24px 56px;
+      text-align: center;
+    }
+    .hero h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800; letter-spacing: -0.02em; }
+    .hero p { font-size: 1.15rem; opacity: 0.85; margin-top: 12px; max-width: 580px; margin-inline: auto; }
+    .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.4);
+      border-radius: 999px;
+      padding: 4px 16px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+    .section { padding: 56px 0; border-bottom: 1px solid #e5e7eb; }
+    .section:last-child { border-bottom: none; }
+    h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #111;
+      margin-bottom: 8px;
+    }
+    .section-subtitle { color: #666; font-size: 0.95rem; margin-bottom: 32px; }
+    .portal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+    .portal-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+      border: 1px solid #e5e7eb;
+    }
+    .portal-card .icon {
+      font-size: 2rem;
+      margin-bottom: 12px;
+      display: block;
+    }
+    .portal-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+    .portal-card p { font-size: 0.9rem; color: #555; margin-bottom: 16px; }
+    .portal-card .url {
+      display: inline-block;
+      background: #f3f4f6;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.8rem;
+      font-family: monospace;
+      color: #357AFF;
+      font-weight: 600;
+    }
+    .page-list { display: grid; gap: 16px; }
+    .page-item {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px 24px;
+      border: 1px solid #e5e7eb;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .page-item .page-badge {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: monospace;
+      white-space: nowrap;
+    }
+    .page-item h4 { font-size: 0.95rem; font-weight: 700; margin-bottom: 4px; }
+    .page-item p { font-size: 0.875rem; color: #555; }
+    .page-item ul { margin-top: 8px; padding-left: 18px; }
+    .page-item ul li { font-size: 0.85rem; color: #555; margin-bottom: 2px; }
+    .flow-steps { counter-reset: step; display: grid; gap: 16px; }
+    .flow-step {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px 24px;
+      border: 1px solid #e5e7eb;
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .step-num {
+      counter-increment: step;
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: #357AFF;
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.85rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .flow-step h4 { font-size: 0.95rem; font-weight: 700; margin-bottom: 4px; }
+    .flow-step p { font-size: 0.875rem; color: #555; }
+    .roles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+    .role-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px;
+      border: 1px solid #e5e7eb;
+    }
+    .role-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .role-card ul { padding-left: 18px; }
+    .role-card ul li { font-size: 0.875rem; color: #444; margin-bottom: 6px; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .tag.admin { background: #dbeafe; color: #1e40af; }
+    .tag.manager { background: #dcfce7; color: #166534; }
+    .callout {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-top: 24px;
+    }
+    .callout h4 { font-weight: 700; color: #1e40af; margin-bottom: 8px; }
+    .callout p { font-size: 0.875rem; color: #1e3a8a; }
+    .callout code {
+      background: rgba(59,130,246,0.1);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: monospace;
+      font-size: 0.85em;
+    }
+    footer { text-align: center; padding: 40px 24px; color: #999; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <span class="badge">Property Management App</span>
+  <h1>Promenade</h1>
+  <p>GPS-verified check-in/check-out system for property managers — with real-time audit logs and admin oversight.</p>
+</div>
+
+<div class="container">
+
+  <!-- OVERVIEW -->
+  <div class="section">
+    <h2>What is Promenade?</h2>
+    <p class="section-subtitle">Promenade is a GPS-verified property attendance system. It lets administrators manage properties and property managers, while managers use the mobile app to check in and out of assigned properties. Every action is logged and reported.</p>
+    <div class="portal-grid">
+      <div class="portal-card">
+        <span class="icon">🔒</span>
+        <h3>Admin Web Portal</h3>
+        <p>Full oversight: manage users, assign properties, view audit logs, and export compliance reports.</p>
+        <span class="url">/account/signin</span>
+      </div>
+      <div class="portal-card">
+        <span class="icon">📱</span>
+        <h3>Manager Mobile App</h3>
+        <p>Property managers use the Expo mobile app to GPS-verify their location and check in/out of their assigned properties.</p>
+        <span class="url">Expo App</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER ROLES -->
+  <div class="section">
+    <h2>User Roles</h2>
+    <p class="section-subtitle">There are two roles in the system. Login automatically routes each user to the correct portal.</p>
+    <div class="roles-grid">
+      <div class="role-card">
+        <h3><span class="tag admin">Admin</span> Administrator</h3>
+        <ul>
+          <li>Creates and manages property manager accounts</li>
+          <li>Creates properties via Google Maps address search</li>
+          <li>Assigns multiple managers to properties</li>
+          <li>Views real-time sign-in/check-in audit logs</li>
+          <li>Exports compliance reports (CSV, Excel, PDF)</li>
+          <li>Resets manager passwords</li>
+          <li>Removes managers or properties</li>
+        </ul>
+      </div>
+      <div class="role-card">
+        <h3><span class="tag manager">Manager</span> Property Manager</h3>
+        <ul>
+          <li>Logs in to the mobile app using phone number and password</li>
+          <li>Views their assigned properties on a map</li>
+          <li>Checks in at a property (GPS verified)</li>
+          <li>Checks out when leaving (time tracked automatically)</li>
+          <li>Cannot access the admin web portal</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN PORTAL PAGES -->
+  <div class="section">
+    <h2>Admin Web Portal — All Pages</h2>
+    <p class="section-subtitle">Login at <code style="background:#f3f4f6;padding:2px 8px;border-radius:4px;font-size:0.85em">/account/signin</code> using your phone number or email and password.</p>
+    <div class="page-list">
+
+      <div class="page-item">
+        <span class="page-badge">/account/signin</span>
+        <div>
+          <h4>Sign In</h4>
+          <p>Secure admin login. Enter your phone number or email and password. Non-admin users are automatically redirected to the mobile app instructions. All admin pages are protected and redirect unauthenticated visitors to this page.</p>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">/admin/dashboard</span>
+        <div>
+          <h4>Admin Dashboard</h4>
+          <p>The main command centre for administrators.</p>
+          <ul>
+            <li><strong>Stats cards:</strong> Total sign-ins, successful check-ins, failed attempts, active managers</li>
+            <li><strong>Audit log table:</strong> Shows every check-in, check-out, and sign-in attempt with manager name, property, time, distance from property, and GPS status</li>
+            <li><strong>Filters:</strong> Filter audit log by All / Success / Failed</li>
+            <li><strong>Export:</strong> Download audit logs as CSV, Excel, or PDF with a date range picker (defaults to last 30 days)</li>
+            <li><strong>Quick links:</strong> Jump directly to Assign Property or Manage Users</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">/admin/manage-users</span>
+        <div>
+          <h4>Manage Property Managers</h4>
+          <p>Create and manage all property manager accounts.</p>
+          <ul>
+            <li><strong>Add Manager:</strong> Enter name, phone number, and optional email. A secure temporary password is auto-generated and displayed — share it with the manager</li>
+            <li><strong>Properties column:</strong> Shows all properties assigned to each manager (supports multiple)</li>
+            <li><strong>Password status:</strong> Shows whether each manager has set their permanent password or is still using a temp password</li>
+            <li><strong>Manage button per manager:</strong> Opens a modal with:
+              <ul>
+                <li>List of all assigned properties with individual remove buttons</li>
+                <li>Assign an existing property from the dropdown</li>
+                <li>Link to create and assign a new property via the map</li>
+                <li>Reset password (generates new temp password)</li>
+                <li>Delete manager (removes all associated data)</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">/admin/assign-property</span>
+        <div>
+          <h4>Assign / Create Property</h4>
+          <p>Create a new property using Google Maps and assign it to a manager.</p>
+          <ul>
+            <li><strong>Address search:</strong> Type an address and Google Maps auto-fills the name and exact location</li>
+            <li><strong>Map click:</strong> Alternatively click anywhere on the map to set the property's GPS location</li>
+            <li><strong>Property name & address:</strong> Auto-filled from the map search, editable</li>
+            <li><strong>Manager dropdown:</strong> Select which manager to assign this property to</li>
+            <li>Multiple managers can be assigned to the same property via the Manage Users page</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">/account/forgot-password</span>
+        <div>
+          <h4>Forgot Password</h4>
+          <p>Request a password reset link via email. Generates a time-limited token and sends a reset email. Only available for accounts with an email address.</p>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">/setup</span>
+        <div>
+          <h4>Initial Setup (one-time)</h4>
+          <p>Used only once when setting up a new installation. Creates the first admin account and initialises all database tables. Permanently locked once an admin exists.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MANAGER MOBILE APP -->
+  <div class="section">
+    <h2>Manager Mobile App — Features</h2>
+    <p class="section-subtitle">Property managers download and use the Expo mobile app. They log in with their phone number and password provided by the administrator.</p>
+    <div class="page-list">
+
+      <div class="page-item">
+        <span class="page-badge">Login Screen</span>
+        <div>
+          <h4>Phone + Password Login</h4>
+          <p>Managers log in using their phone number and the temporary password from the admin. On first login they are prompted to change their password.</p>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">My Properties</span>
+        <div>
+          <h4>Property List</h4>
+          <p>Shows all properties the manager is assigned to, loaded from the server. Multiple properties are supported — a manager can be assigned to more than one.</p>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">Check In</span>
+        <div>
+          <h4>GPS-Verified Check In</h4>
+          <p>The manager selects a property and taps Check In. The app captures their GPS coordinates and verifies they are within range of the property. The check-in is logged with timestamp, location, and status. Only one active check-in is allowed at a time.</p>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">Check Out</span>
+        <div>
+          <h4>Timed Check Out</h4>
+          <p>When the manager leaves, they tap Check Out. The system records the checkout time and automatically calculates the total time spent at the property (in hours and minutes). This duration is stored in the audit log and visible in admin reports.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- AUDIT & REPORTING -->
+  <div class="section">
+    <h2>Audit Logs &amp; Reporting</h2>
+    <p class="section-subtitle">Every action in the system is logged. Administrators have full visibility from the dashboard.</p>
+    <div class="page-list">
+
+      <div class="page-item">
+        <span class="page-badge">Audit Log</span>
+        <div>
+          <h4>What's Tracked</h4>
+          <ul>
+            <li>Check-in: time, property, GPS coordinates, distance from property, status</li>
+            <li>Check-out: time, duration at property (hours), GPS coordinates</li>
+            <li>Sign-in attempts: success/failure, IP address, device info</li>
+            <li>Location verifications: whether manager was within range</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="page-item">
+        <span class="page-badge">Export</span>
+        <div>
+          <h4>Report Export</h4>
+          <ul>
+            <li>Select a date range (defaults to last 30 days)</li>
+            <li>Export as CSV, Excel (.xlsx), or PDF</li>
+            <li>Reports include manager name, property, action type, time, duration, and GPS status</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- HOW IT WORKS -->
+  <div class="section">
+    <h2>How It Works — End to End</h2>
+    <p class="section-subtitle">A typical day in the system.</p>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <div>
+          <h4>Admin sets up the system</h4>
+          <p>Admin logs in to the web portal, creates property manager accounts, searches for property addresses via Google Maps, and assigns managers to properties.</p>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <div>
+          <h4>Admin shares credentials</h4>
+          <p>The admin copies the manager's phone number and temporary password from the success modal and shares them. The manager downloads the mobile app and logs in.</p>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <div>
+          <h4>Manager arrives at a property</h4>
+          <p>The manager opens the app, selects the property from their list, and taps Check In. The app verifies their GPS location and records the arrival time.</p>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">4</div>
+        <div>
+          <h4>Manager leaves</h4>
+          <p>When leaving, the manager taps Check Out. The system calculates the total time spent and logs it with all location data.</p>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">5</div>
+        <div>
+          <h4>Admin reviews reports</h4>
+          <p>Admin checks the dashboard to see all activity in real time. They can filter by success/failure, view GPS accuracy, and export data for payroll or compliance reporting.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GETTING STARTED -->
+  <div class="section">
+    <h2>Getting Started</h2>
+    <p class="section-subtitle">Everything you need to get up and running.</p>
+
+    <div class="callout">
+      <h4>First-time setup</h4>
+      <p>Visit <code>/setup</code> on the web portal to create the first admin account. Enter your name, phone number, and a password (minimum 8 characters). This page locks permanently after the first admin is created.</p>
+    </div>
+
+    <div class="callout" style="margin-top:16px;background:#f0fdf4;border-color:#bbf7d0;">
+      <h4 style="color:#166534;">Admin login</h4>
+      <p style="color:#14532d;">Visit <code style="background:rgba(22,101,52,0.1)">/account/signin</code>. Enter your phone number in the "Email or Phone" field and your password. You will be redirected to the admin dashboard.</p>
+    </div>
+
+    <div class="callout" style="margin-top:16px;background:#fff7ed;border-color:#fed7aa;">
+      <h4 style="color:#9a3412;">After database setup</h4>
+      <p style="color:#7c2d12;">If you've just added new properties or ran an update, visit <code style="background:rgba(154,52,18,0.1)">/api/setup</code> once to run any pending database migrations. This is safe to call multiple times.</p>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  Promenade Property Management System &mdash; Admin Guide
+</footer>
+
+</body>
+</html>
