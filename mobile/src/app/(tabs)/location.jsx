@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Alert,
   AppState,
   ScrollView,
+  Animated,
 } from "react-native";
 import {
   MapPin,
@@ -17,6 +18,7 @@ import {
   Building2,
   MapPinCheck,
   Clock,
+  Lock,
 } from "lucide-react-native";
 import { router } from "expo-router";
 import * as Location from "expo-location";
@@ -30,6 +32,24 @@ import { useAuth } from "@/utils/auth/useAuth";
 import useUser from "@/utils/auth/useUser";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+const MAX_DISTANCE = 200; // meters
+
+// Haversine formula to calculate distance between two coordinates (client-side)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in meters
+}
+
 export default function LocationScreen() {
   const { colors, brand } = useTheme();
   const { isReady, auth } = useAuth();
@@ -37,10 +57,12 @@ export default function LocationScreen() {
   const queryClient = useQueryClient();
   const [location, setLocation] = useState(null);
   const [permissionStatus, setPermissionStatus] = useState(null);
-  const [selectedPropertyId, setSelectedPropertyId] = useState(null);
-  const [verifying, setVerifying] = useState(false);
-  const [checkingIn, setCheckingIn] = useState(false);
-  const [verificationResult, setVerificationResult] = useState(null);
+  const [distances, setDistances] = useState({});
+  const [refreshingLocation, setRefreshingLocation] = useState(false);
+  const propertiesRef = useRef([]);
+
+  // Animated values for each property (for smooth transitions)
+  const animatedValues = useRef({}).current;
 
   // Fetch assigned properties
   const { data: propertiesData, isLoading: propertiesLoading } = useQuery({
@@ -58,16 +80,10 @@ export default function LocationScreen() {
   });
 
   const properties = propertiesData?.properties || [];
+  propertiesRef.current = properties;
+
   const isCheckedIn = statusData?.isCheckedIn || false;
   const activeCheckIn = statusData?.checkIn || null;
-  const hasMultipleProperties = properties.length > 1;
-
-  // Auto-select single property
-  useEffect(() => {
-    if (properties.length === 1 && !selectedPropertyId) {
-      setSelectedPropertyId(properties[0].id);
-    }
-  }, [properties, selectedPropertyId]);
 
   const checkPermissions = useCallback(async () => {
     const { status } = await Location.getForegroundPermissionsAsync();
@@ -88,7 +104,7 @@ export default function LocationScreen() {
   const showSettingsAlert = () => {
     Alert.alert(
       "Location Access Required",
-      "Location permission was denied. Please enable Location Services in your device settings.",
+      "Location permission is required to check your proximity to properties.",
       [
         { text: "Cancel", style: "cancel" },
         { text: "Open Settings", onPress: () => Linking.openSettings() },
@@ -96,92 +112,97 @@ export default function LocationScreen() {
     );
   };
 
-  const getLocation = async () => {
-    const { status, canAskAgain } =
-      await Location.requestForegroundPermissionsAsync();
-    setPermissionStatus(status);
-    if (status !== "granted") {
-      if (!canAskAgain) showSettingsAlert();
-      else Alert.alert("Permission Denied", "Location permission is required.");
-      return null;
-    }
-    const loc = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
+  // Initialize animated values when properties load
+  useEffect(() => {
+    properties.forEach((property) => {
+      if (!animatedValues[property.id]) {
+        animatedValues[property.id] = new Animated.Value(0);
+      }
     });
-    return loc.coords;
-  };
+  }, [properties, animatedValues]);
 
-  const handleVerify = async () => {
-    try {
-      setVerifying(true);
-      setVerificationResult(null);
+  // Update distances based on current location
+  const updateDistances = useCallback((coords) => {
+    const props = propertiesRef.current;
+    const newDistances = {};
 
-      const coords = await getLocation();
-      if (!coords) {
-        setVerifying(false);
-        return;
+    props.forEach((property) => {
+      if (property.latitude && property.longitude) {
+        const distance = calculateDistance(
+          coords.latitude,
+          coords.longitude,
+          parseFloat(property.latitude),
+          parseFloat(property.longitude),
+        );
+        newDistances[property.id] = distance;
+
+        // Animate to 1 if within range, 0 if outside
+        const inRange = distance <= MAX_DISTANCE;
+        const currentValue = animatedValues[property.id]?._value || 0;
+
+        // Only animate if state changes
+        if ((inRange && currentValue !== 1) || (!inRange && currentValue !== 0)) {
+          Animated.spring(animatedValues[property.id], {
+            toValue: inRange ? 1 : 0,
+            tension: 65,
+            friction: 7,
+            useNativeDriver: false,
+          }).start();
+        }
       }
+    });
 
-      setLocation(coords);
+    setDistances(newDistances);
+    setLocation(coords);
+  }, [animatedValues]);
 
-      let data;
-      try {
-        data = await api.post("/api/location/verify", {
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          userId: user?.id,
-        });
-      } catch (e) {
-        data = { verified: false, message: e?.message || "Location verification failed." };
-      }
-
-      if (data.verified) {
-        setVerificationResult({
-          verified: true,
-          property: data.property,
-          distance: data.distance,
-        });
-      } else {
-        setVerificationResult({
-          verified: false,
-          message: data.message,
-          distance: data.distance,
-          nearestProperty: data.nearestProperty,
-        });
-      }
-    } catch (error) {
-      console.error("Error verifying location:", error);
-      Alert.alert("Error", "Failed to verify your location.");
-    } finally {
-      setVerifying(false);
+  // Start GPS tracking when properties are loaded and permission granted
+  useEffect(() => {
+    if (properties.length === 0 || permissionStatus !== "granted") {
+      return;
     }
-  };
+
+    let subscription;
+
+    const startTracking = async () => {
+      setRefreshingLocation(true);
+      try {
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 5, // Update every 5 meters
+          },
+          (loc) => {
+            setRefreshingLocation(false);
+            updateDistances(loc.coords);
+          }
+        );
+      } catch (error) {
+        console.error("Error starting location tracking:", error);
+        setRefreshingLocation(false);
+      }
+    };
+
+    startTracking();
+
+    return () => {
+      if (subscription) subscription.remove();
+    };
+  }, [properties.length, permissionStatus, updateDistances]);
 
   const handleCheckInForProperty = async (property) => {
     try {
-      setCheckingIn(true);
-
-      const coords = await getLocation();
-      if (!coords) {
-        setCheckingIn(false);
+      if (!location) {
+        Alert.alert("Waiting for Location", "Please wait while we determine your location.");
         return;
       }
 
-      // Verify location
-      let verifyData;
-      try {
-        verifyData = await api.post("/api/location/verify", {
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          userId: user?.id,
-        });
-      } catch (e) {
-        verifyData = { verified: false, message: e?.message || "You are not within 200 meters of this property." };
-      }
-
-      if (!verifyData.verified) {
-        Alert.alert("Cannot Check In", verifyData.message || "You are not within 200 meters of this property.");
-        setCheckingIn(false);
+      const distance = distances[property.id];
+      if (distance > MAX_DISTANCE) {
+        Alert.alert(
+          "Too Far Away",
+          `You must be within 200 meters of ${property.name} to check in. Current distance: ${formatDistance(distance)}`
+        );
         return;
       }
 
@@ -192,8 +213,8 @@ export default function LocationScreen() {
         checkinData = await api.post("/api/checkin", {
           userId: user?.id,
           propertyId: property.id,
-          latitude: coords.latitude,
-          longitude: coords.longitude,
+          latitude: location.latitude,
+          longitude: location.longitude,
         });
         checkinOk = true;
       } catch (e) {
@@ -212,8 +233,6 @@ export default function LocationScreen() {
     } catch (error) {
       console.error("Check-in error:", error);
       Alert.alert("Error", "Failed to check in. Please try again.");
-    } finally {
-      setCheckingIn(false);
     }
   };
 
@@ -225,6 +244,13 @@ export default function LocationScreen() {
       minute: "2-digit",
       hour12: true,
     });
+  };
+
+  const formatDistance = (meters) => {
+    if (meters < 1000) {
+      return `${Math.round(meters)}m`;
+    }
+    return `${(meters / 1000).toFixed(1)}km`;
   };
 
   if (!isReady || userLoading) {
@@ -271,7 +297,7 @@ export default function LocationScreen() {
               marginBottom: 24,
             }}
           >
-            Sign in to view your assigned properties and verify your location.
+            Sign in to view your assigned properties and check in.
           </Text>
           <TouchableOpacity onPress={() => router.replace('/signin')} activeOpacity={0.85}>
             <LinearGradient
@@ -418,7 +444,7 @@ export default function LocationScreen() {
                 opacity: 0.8,
               }}
             >
-              Enable Location Services for this app in your device settings.
+              Enable Location Services to check your proximity to properties.
             </Text>
             <TouchableOpacity
               onPress={() => Linking.openSettings()}
@@ -443,6 +469,38 @@ export default function LocationScreen() {
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Location Status */}
+        {permissionStatus === "granted" && !permissionDenied && (
+          <View
+            style={{
+              backgroundColor: colors.cardBackground,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: colors.border,
+              padding: 14,
+              marginBottom: 20,
+              flexDirection: "row",
+              alignItems: "center",
+            }}
+          >
+            {refreshingLocation ? (
+              <ActivityIndicator size="small" color={brand.gradientStart} />
+            ) : (
+              <MapPin size={16} color={brand.success} strokeWidth={2} />
+            )}
+            <Text
+              style={{
+                fontSize: 13,
+                fontFamily: "Inter_500Medium",
+                color: colors.secondaryText,
+                marginLeft: 8,
+              }}
+            >
+              {refreshingLocation ? "Updating location..." : "Location active • Checking proximity"}
+            </Text>
           </View>
         )}
 
@@ -514,35 +572,39 @@ export default function LocationScreen() {
             </View>
           ) : (
             properties.map((property) => {
-              const isSelected = selectedPropertyId === property.id;
+              const distance = distances[property.id];
+              const inRange = distance !== undefined && distance <= MAX_DISTANCE;
               const isCheckedInHere =
                 isCheckedIn && activeCheckIn?.property_id === property.id;
+              const animValue = animatedValues[property.id] || new Animated.Value(0);
+
+              const backgroundColor = animValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [colors.cardBackground, colors.primaryLight],
+              });
+
+              const opacity = animValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.4, 1],
+              });
 
               return (
-                <TouchableOpacity
+                <Animated.View
                   key={property.id}
-                  onPress={() => {
-                    setSelectedPropertyId(property.id);
-                    setVerificationResult(null);
-                  }}
-                  activeOpacity={0.8}
                   style={{
-                    backgroundColor: isSelected
-                      ? colors.primaryLight
-                      : colors.cardBackground,
+                    backgroundColor,
                     borderRadius: 18,
                     borderWidth: 1,
-                    borderColor: isSelected
-                      ? brand.gradientEnd + "40"
-                      : colors.border,
+                    borderColor: inRange ? brand.gradientEnd + "40" : colors.border,
                     padding: 18,
-                    marginBottom: 10,
+                    marginBottom: 12,
+                    opacity,
                   }}
                 >
                   <View
                     style={{
                       flexDirection: "row",
-                      alignItems: "center",
+                      alignItems: "flex-start",
                       justifyContent: "space-between",
                     }}
                   >
@@ -556,11 +618,7 @@ export default function LocationScreen() {
                       >
                         <MapPin
                           size={16}
-                          color={
-                            isSelected
-                              ? brand.gradientEnd
-                              : colors.secondaryText
-                          }
+                          color={inRange ? brand.gradientEnd : colors.secondaryText}
                           strokeWidth={1.5}
                         />
                         <Text
@@ -580,10 +638,59 @@ export default function LocationScreen() {
                           fontFamily: "Inter_400Regular",
                           color: colors.secondaryText,
                           marginLeft: 24,
+                          marginBottom: 4,
                         }}
                       >
                         {property.address}
                       </Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          marginLeft: 24,
+                        }}
+                      >
+                        {inRange ? (
+                          <>
+                            <CheckCircle size={12} color={brand.success} strokeWidth={2} />
+                            <Text
+                              style={{
+                                fontSize: 12,
+                                fontFamily: "Inter_500Medium",
+                                color: brand.success,
+                                marginLeft: 4,
+                              }}
+                            >
+                              Within range • {formatDistance(distance)}
+                            </Text>
+                          </>
+                        ) : distance !== undefined ? (
+                          <>
+                            <Lock size={12} color={colors.secondaryText} strokeWidth={1.5} />
+                            <Text
+                              style={{
+                                fontSize: 12,
+                                fontFamily: "Inter_400Regular",
+                                color: colors.secondaryText,
+                                marginLeft: 4,
+                              }}
+                            >
+                              {formatDistance(distance)} away
+                            </Text>
+                          </>
+                        ) : (
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontFamily: "Inter_400Regular",
+                              color: colors.tertiaryText,
+                              marginLeft: 0,
+                            }}
+                          >
+                            Waiting for location...
+                          </Text>
+                        )}
+                      </View>
                     </View>
 
                     {isCheckedInHere && (
@@ -606,337 +713,93 @@ export default function LocationScreen() {
                         </Text>
                       </View>
                     )}
-
-                    {hasMultipleProperties && !isCheckedInHere && (
-                      <View
-                        style={{
-                          width: 20,
-                          height: 20,
-                          borderRadius: 10,
-                          borderWidth: 2,
-                          borderColor: isSelected
-                            ? brand.gradientEnd
-                            : colors.border,
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        {isSelected && (
-                          <View
-                            style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: 5,
-                              backgroundColor: brand.gradientEnd,
-                            }}
-                          />
-                        )}
-                      </View>
-                    )}
                   </View>
 
-                  {/* Check-In Button for this property (when selected, multiple props, and not already checked in) */}
-                  {isSelected && hasMultipleProperties && !isCheckedIn && (
-                    <TouchableOpacity
-                      onPress={() => handleCheckInForProperty(property)}
-                      disabled={checkingIn}
-                      activeOpacity={0.85}
-                      style={{ marginTop: 14 }}
+                  {/* Check In Button - only shows when in range and not checked in */}
+                  {inRange && !isCheckedIn && permissionStatus === "granted" && (
+                    <Animated.View
+                      style={{
+                        marginTop: 14,
+                        opacity: animValue,
+                        transform: [{
+                          translateY: animValue.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [10, 0],
+                          })
+                        }]
+                      }}
                     >
-                      <LinearGradient
-                        colors={
-                          checkingIn
-                            ? [brand.slate, brand.slate]
-                            : [brand.gradientStart, brand.gradientEnd]
-                        }
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={{
-                          borderRadius: 12,
-                          paddingVertical: 13,
-                          flexDirection: "row",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
+                      <TouchableOpacity
+                        onPress={() => handleCheckInForProperty(property)}
+                        activeOpacity={0.85}
                       >
-                        {checkingIn ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <>
-                            <MapPinCheck
-                              size={16}
-                              color="#FFFFFF"
-                              strokeWidth={2}
-                            />
-                            <Text
-                              style={{
-                                fontSize: 14,
-                                fontFamily: "Inter_600SemiBold",
-                                color: "#FFFFFF",
-                                marginLeft: 8,
-                              }}
-                            >
-                              Check In Here
-                            </Text>
-                          </>
-                        )}
-                      </LinearGradient>
-                    </TouchableOpacity>
+                        <LinearGradient
+                          colors={[brand.gradientStart, brand.gradientEnd]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={{
+                            borderRadius: 12,
+                            paddingVertical: 13,
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <MapPinCheck
+                            size={16}
+                            color="#FFFFFF"
+                            strokeWidth={2}
+                          />
+                          <Text
+                            style={{
+                              fontSize: 14,
+                              fontFamily: "Inter_600SemiBold",
+                              color: "#FFFFFF",
+                              marginLeft: 8,
+                            }}
+                          >
+                            Check In Here
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </Animated.View>
                   )}
-                </TouchableOpacity>
+                </Animated.View>
               );
             })
           )}
         </View>
 
-        {/* Verify Location Section */}
-        {properties.length > 0 && (
-          <View style={{ marginBottom: 20 }}>
-            <Text
-              style={{
-                fontSize: 14,
-                fontFamily: "Inter_600SemiBold",
-                color: colors.secondaryText,
-                letterSpacing: 0.5,
-                textTransform: "uppercase",
-                marginBottom: 12,
-              }}
-            >
-              Verify Location
-            </Text>
-
-            {/* Enable Location */}
-            {permissionStatus !== "granted" && !permissionDenied && (
-              <TouchableOpacity
-                onPress={async () => {
-                  const { status } =
-                    await Location.requestForegroundPermissionsAsync();
-                  setPermissionStatus(status);
-                }}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={[brand.gradientStart, brand.gradientEnd]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={{
-                    borderRadius: 14,
-                    padding: 16,
-                    alignItems: "center",
-                    marginBottom: 16,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 16,
-                      fontFamily: "Inter_600SemiBold",
-                      color: "#FFFFFF",
-                    }}
-                  >
-                    Enable Location Access
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-
-            {/* Verify Button */}
-            {permissionStatus === "granted" && (
-              <TouchableOpacity
-                onPress={handleVerify}
-                disabled={verifying}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={
-                    verifying
-                      ? [brand.slate, brand.slate]
-                      : [brand.gradientStart, brand.gradientEnd]
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={{
-                    borderRadius: 14,
-                    padding: 16,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: 16,
-                  }}
-                >
-                  {verifying ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Navigation size={18} color="#FFFFFF" strokeWidth={2} />
-                      <Text
-                        style={{
-                          fontSize: 16,
-                          fontFamily: "Inter_600SemiBold",
-                          color: "#FFFFFF",
-                          marginLeft: 8,
-                        }}
-                      >
-                        Verify My Location
-                      </Text>
-                    </>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-
-            {/* Verification Result */}
-            {verificationResult && (
-              <View
-                style={{
-                  backgroundColor: verificationResult.verified
-                    ? colors.successBg
-                    : colors.warningBg,
-                  borderRadius: 18,
-                  padding: 20,
-                  borderWidth: 1,
-                  borderColor: verificationResult.verified
-                    ? brand.success + "40"
-                    : brand.warning + "40",
-                }}
-              >
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginBottom: 12,
-                  }}
-                >
-                  {verificationResult.verified ? (
-                    <CheckCircle
-                      size={28}
-                      color={brand.success}
-                      strokeWidth={1.5}
-                    />
-                  ) : (
-                    <XCircle
-                      size={28}
-                      color={brand.warning}
-                      strokeWidth={1.5}
-                    />
-                  )}
-                  <Text
-                    style={{
-                      fontSize: 17,
-                      fontFamily: "Inter_600SemiBold",
-                      color: verificationResult.verified
-                        ? brand.success
-                        : brand.warning,
-                      marginLeft: 12,
-                    }}
-                  >
-                    {verificationResult.verified ? "Verified" : "Not Verified"}
-                  </Text>
-                </View>
-
-                {verificationResult.verified ? (
-                  <>
-                    <Text
-                      style={{
-                        fontSize: 14,
-                        fontFamily: "Inter_500Medium",
-                        color: colors.text,
-                        marginBottom: 4,
-                      }}
-                    >
-                      {verificationResult.property.name}
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontFamily: "Inter_400Regular",
-                        color: colors.secondaryText,
-                        marginBottom: 4,
-                      }}
-                    >
-                      {verificationResult.property.address}
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontFamily: "Inter_400Regular",
-                        color: colors.secondaryText,
-                      }}
-                    >
-                      Distance: {verificationResult.distance}m away
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text
-                      style={{
-                        fontSize: 14,
-                        fontFamily: "Inter_400Regular",
-                        color: colors.text,
-                        lineHeight: 20,
-                        marginBottom: 8,
-                      }}
-                    >
-                      {verificationResult.message}
-                    </Text>
-                    {verificationResult.nearestProperty && (
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          fontFamily: "Inter_400Regular",
-                          color: colors.secondaryText,
-                        }}
-                      >
-                        Nearest: {verificationResult.nearestProperty} (
-                        {verificationResult.distance}m)
-                      </Text>
-                    )}
-                  </>
-                )}
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Current Location */}
-        {location && (
-          <View
-            style={{
-              backgroundColor: colors.cardBackground,
-              borderRadius: 14,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 16,
+        {/* Enable Location CTA */}
+        {permissionStatus !== "granted" && !permissionDenied && (
+          <TouchableOpacity
+            onPress={async () => {
+              const { status } = await Location.requestForegroundPermissionsAsync();
+              setPermissionStatus(status);
             }}
+            activeOpacity={0.85}
           >
-            <Text
+            <LinearGradient
+              colors={[brand.gradientStart, brand.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
               style={{
-                fontSize: 12,
-                fontFamily: "Inter_500Medium",
-                color: colors.secondaryText,
-                marginBottom: 8,
+                borderRadius: 14,
+                padding: 16,
+                alignItems: "center",
               }}
             >
-              Current Coordinates
-            </Text>
-            <Text
-              style={{
-                fontSize: 12,
-                fontFamily: "Inter_400Regular",
-                color: colors.tertiaryText,
-              }}
-            >
-              Lat: {location.latitude.toFixed(6)}
-            </Text>
-            <Text
-              style={{
-                fontSize: 12,
-                fontFamily: "Inter_400Regular",
-                color: colors.tertiaryText,
-              }}
-            >
-              Lng: {location.longitude.toFixed(6)}
-            </Text>
-          </View>
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontFamily: "Inter_600SemiBold",
+                  color: "#FFFFFF",
+                }}
+              >
+                Enable Location Access
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
         )}
       </ScrollView>
     </ScreenContainer>

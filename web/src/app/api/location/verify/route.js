@@ -28,11 +28,12 @@ export async function POST(request) {
       );
     }
 
-    // Get all properties for this manager
+    // Get all properties for this manager (junction table + legacy manager_id fallback)
     const properties = await sql`
-      SELECT id, name, address, latitude, longitude
-      FROM properties
-      WHERE manager_id = ${userId}
+      SELECT DISTINCT p.id, p.name, p.address, p.latitude, p.longitude
+      FROM properties p
+      LEFT JOIN property_managers pm ON pm.property_id = p.id
+      WHERE pm.user_id = ${userId} OR p.manager_id = ${userId}
     `;
 
     if (properties.length === 0) {
