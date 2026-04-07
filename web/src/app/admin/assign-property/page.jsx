@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
-import { useMapEvents } from "react-leaflet";
 
-// We'll lazy load the entire map implementation
+// Lazy load the map component
 const LazyMap = lazy(() =>
   import("./components/PropertyMap").then((m) => ({ default: m.PropertyMap }))
 );
@@ -15,7 +14,9 @@ function AddressSearch({ onPlaceSelect, onError }) {
   const [showResults, setShowResults] = useState(false);
   const inputRef = useRef(null);
   const resultsRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
 
+  // Close results when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (resultsRef.current && !resultsRef.current.contains(e.target) && !inputRef.current.contains(e.target)) {
@@ -26,13 +27,22 @@ function AddressSearch({ onPlaceSelect, onError }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const searchAddress = async () => {
-    if (!query.trim()) return;
+  const searchAddress = async (searchQuery) => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 3) {
+      setResults([]);
+      setShowResults(false);
+      return;
+    }
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
 
     setSearching(true);
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`,
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5&addressdetails=1`,
         {
           headers: {
             "User-Agent": "Promenade-Property-Manager",
@@ -48,11 +58,24 @@ function AddressSearch({ onPlaceSelect, onError }) {
       setResults(data);
       setShowResults(true);
     } catch (err) {
-      onError("Failed to search address. Please try again.");
       console.error("Nominatim error:", err);
+      // Don't show error for autocomplete, just silently fail
+      setResults([]);
+      setShowResults(false);
     } finally {
       setSearching(false);
     }
+  };
+
+  // Debounced search
+  const handleChange = (text) => {
+    setQuery(text);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      searchAddress(text);
+    }, 300);
   };
 
   const handleSelectPlace = (place) => {
@@ -60,14 +83,9 @@ function AddressSearch({ onPlaceSelect, onError }) {
     const lon = parseFloat(place.lon);
 
     onPlaceSelect({
-      geometry: {
-        location: {
-          lat: () => lat,
-          lng: () => lon,
-        },
-      },
-      formatted_address: place.display_name,
-      name: place.display_name.split(",")[0],
+      lat,
+      lon,
+      address: place.display_name,
     });
 
     setQuery(place.display_name);
@@ -81,25 +99,19 @@ function AddressSearch({ onPlaceSelect, onError }) {
         ref={inputRef}
         type="text"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => results.length > 0 && setShowResults(true)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            searchAddress();
-          }
+        onChange={(e) => handleChange(e.target.value)}
+        onFocus={() => {
+          if (results.length > 0) setShowResults(true);
         }}
-        placeholder="Search for an address..."
+        placeholder="Start typing address..."
+        autoComplete="off"
         className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
       />
-      <button
-        type="button"
-        onClick={searchAddress}
-        disabled={searching || !query.trim()}
-        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600 disabled:bg-gray-300"
-      >
-        {searching ? "..." : "🔍"}
-      </button>
+      {searching && (
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">
+          Searching...
+        </span>
+      )}
 
       {showResults && results.length > 0 && (
         <div
@@ -113,10 +125,29 @@ function AddressSearch({ onPlaceSelect, onError }) {
               onClick={() => handleSelectPlace(place)}
               className="w-full border-b border-gray-100 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 last:border-0"
             >
-              <div className="font-medium text-gray-900">{place.display_name.split(",")[0]}</div>
+              <div className="font-medium text-gray-900">
+                {place.display_name.split(",")[0]}
+              </div>
               <div className="truncate text-xs text-gray-500">{place.display_name}</div>
+              <div className="mt-1 flex gap-2 text-xs text-gray-400">
+                {place.address?.state && (
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5">
+                    {place.address.state}
+                  </span>
+                )}
+                {place.address?.country && (
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5">
+                    {place.address.country}
+                  </span>
+                )}
+              </div>
             </button>
           ))}
+          {results.length === 0 && query.length >= 3 && !searching && (
+            <div className="px-4 py-3 text-sm text-gray-500 text-center">
+              No results found. Try a different search term.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -137,6 +168,7 @@ export default function AssignPropertyPage() {
   const [mapZoom, setMapZoom] = useState(12);
   const [mapKey, setMapKey] = useState(0);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -169,36 +201,60 @@ export default function AssignPropertyPage() {
 
       const data = await response.json();
       setUsers(data.users || []);
-
-      if ((data.users || []).length === 0) {
-        setError(
-          "No managers found. Please create a manager account first via Manage Users.",
-        );
-      }
     } catch (err) {
       console.error("Error fetching users:", err);
-      setError("Failed to load users. Please refresh the page.");
+      // Don't show error for user fetch, just log it
+      setUsers([]);
     } finally {
       setFetchingUsers(false);
     }
   };
 
   const handlePlaceSelect = (place) => {
-    if (!place.geometry?.location) {
-      setError("Could not find location for this place");
+    const { lat, lon, address } = place;
+
+    setSelectedLocation({ lat, lon });
+    setMapCenter([lat, lon]);
+    setMapZoom(16);
+    setPropertyAddress(address);
+    setError(null);
+    setMapKey((prev) => prev + 1);
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser.");
       return;
     }
 
-    const lat = place.geometry.location.lat();
-    const lng = place.geometry.location.lng();
-
-    setSelectedLocation({ lat, lng });
-    setMapCenter([lat, lng]);
-    setMapZoom(16);
-    setPropertyAddress(place.formatted_address || "");
-    setPropertyName(place.name || "");
+    setGettingLocation(true);
     setError(null);
-    setMapKey((prev) => prev + 1);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+
+        setSelectedLocation({ lat: latitude, lng: longitude });
+        setMapCenter([latitude, longitude]);
+        setMapZoom(16);
+
+        // Only update lat/lon - don't touch address or name
+        setError(null);
+        setGettingLocation(false);
+      },
+      (err) => {
+        console.error("Geolocation error:", err);
+        setError(
+          "Unable to get your location. Please enable location permissions or search for an address manually."
+        );
+        setGettingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
   };
 
   const handleMapClick = (event) => {
@@ -206,26 +262,7 @@ export default function AssignPropertyPage() {
     const lng = event.detail.latLng.lng;
     setSelectedLocation({ lat, lng });
 
-    fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-      {
-        headers: {
-          "User-Agent": "Promenade-Property-Manager",
-        },
-      }
-    )
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) {
-          setPropertyAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-        } else {
-          setPropertyAddress(data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-        }
-      })
-      .catch(() => {
-        setPropertyAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-      });
-
+    // Don't auto-fill address from map click - only get lat/lon
     setError(null);
   };
 
@@ -236,52 +273,97 @@ export default function AssignPropertyPage() {
     setError(null);
 
     if (!selectedLocation) {
-      setError("Please select a location on the map");
+      setError("Please select a location using 'Get My Location', map click, or address search.");
       setLoading(false);
       return;
     }
 
-    if (!propertyName || !propertyAddress || !selectedUserId) {
-      setError("Please fill in all fields");
+    if (!propertyName.trim()) {
+      setError("Please enter a property name.");
       setLoading(false);
       return;
     }
 
-    try {
-      const response = await fetch("/api/properties", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: propertyName,
-          address: propertyAddress,
-          latitude: selectedLocation.lat,
-          longitude: selectedLocation.lng,
-          managerId: parseInt(selectedUserId),
-        }),
-      });
+    if (!propertyAddress.trim()) {
+      setError("Please enter an address.");
+      setLoading(false);
+      return;
+    }
 
-      const data = await response.json();
+    // Manager is now optional
+    if (selectedUserId) {
+      // Has manager - assign property
+      try {
+        const response = await fetch("/api/properties", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: propertyName.trim(),
+            address: propertyAddress.trim(),
+            latitude: selectedLocation.lat,
+            longitude: selectedLocation.lng,
+            managerId: parseInt(selectedUserId),
+          }),
+        });
 
-      if (response.ok) {
-        setMessage(
-          `✅ Success! Property "${propertyName}" assigned to manager. <a href="/admin/manage-users" class="underline">Back to Manage Users</a>`,
-        );
-        setPropertyName("");
-        setPropertyAddress("");
-        setSelectedLocation(null);
-        setSelectedUserId("");
-        setMapCenter([40.7128, -74.006]);
-        setMapZoom(12);
-        setMapKey((prev) => prev + 1);
-      } else {
-        setError(data.error || "Failed to create property");
+        const data = await response.json();
+
+        if (response.ok) {
+          setMessage(
+            `✅ Success! Property "${propertyName}" created and assigned to manager. <a href="/admin/manage-users" class="underline">Back to Manage Users</a>`
+          );
+          resetForm();
+        } else {
+          setError(data.error || "Failed to create property");
+        }
+      } catch (err) {
+        console.error("Error creating property:", err);
+        setError("Failed to create property. Please try again.");
       }
-    } catch (err) {
-      console.error("Error creating property:", err);
-      setError("Failed to create property. Please try again.");
-    } finally {
-      setLoading(false);
+    } else {
+      // No manager - create property without assignment
+      try {
+        const response = await fetch("/api/properties", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: propertyName.trim(),
+            address: propertyAddress.trim(),
+            latitude: selectedLocation.lat,
+            longitude: selectedLocation.lng,
+            // No managerId - property will be unassigned
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          setMessage(
+            `✅ Success! Property "${propertyName}" created (no manager assigned). <a href="/admin/manage-users" class="underline">Manage Users</a> to assign managers.`
+          );
+          resetForm();
+        } else {
+          setError(data.error || "Failed to create property");
+        }
+      } catch (err) {
+        console.error("Error creating property:", err);
+        setError("Failed to create property. Please try again.");
+      }
     }
+
+    setLoading(false);
+  };
+
+  const resetForm = () => {
+    setPropertyName("");
+    setPropertyAddress("");
+    setSelectedLocation(null);
+    setSelectedUserId("");
+    setMapCenter([40.7128, -74.006]);
+    setMapZoom(12);
+    setMapKey((prev) => prev + 1);
+    setMessage(null);
+    setError(null);
   };
 
   if (fetchingUsers) {
@@ -306,28 +388,55 @@ export default function AssignPropertyPage() {
 
         <div className="rounded-2xl bg-white p-8 shadow-xl">
           <h1 className="mb-2 text-center text-3xl font-bold text-gray-800">
-            Assign New Property
+            Add New Property
           </h1>
           <p className="mb-8 text-center text-sm text-gray-600">
-            Search for an address or select a location on the map (powered by OpenStreetMap)
+            Add a property to your portfolio. Assign to a manager now or later.
           </p>
 
           <div className="grid gap-8 md:grid-cols-2">
             {/* Map Section */}
             <div className="space-y-4">
-              <div>
+              <div className="space-y-3">
                 <label className="mb-2 block text-sm font-medium text-gray-700">
-                  🔍 Search Address
+                  📍 Get My Location
                 </label>
-                <AddressSearch onPlaceSelect={handlePlaceSelect} onError={setError} />
-                <p className="mt-1 text-xs text-gray-500">
-                  Powered by OpenStreetMap • Free geocoding
+                <button
+                  type="button"
+                  onClick={handleGetCurrentLocation}
+                  disabled={gettingLocation}
+                  className="w-full rounded-lg border-2 border-dashed border-blue-300 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-600 hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  {gettingLocation ? (
+                    <>
+                      <span className="inline-block animate-spin mr-2">🔄</span>
+                      Getting location...
+                    </>
+                  ) : (
+                    <>
+                      <span className="mr-2">📍</span>
+                      Update my location (latitude & longitude only)
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-gray-500">
+                  Uses your browser's geolocation • Auto-fills coordinates only
                 </p>
               </div>
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Or Click on Map
+                  🔍 Search Address (auto-fills all fields)
+                </label>
+                <AddressSearch onPlaceSelect={handlePlaceSelect} onError={setError} />
+                <p className="mt-1 text-xs text-gray-500">
+                  Powered by OpenStreetMap • Start typing to see suggestions
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  Or Click on Map (sets coordinates only)
                 </label>
                 <div className="overflow-hidden rounded-lg border-2 border-gray-200 shadow-lg">
                   {mapLoaded ? (
@@ -365,8 +474,7 @@ export default function AssignPropertyPage() {
                 </div>
                 {selectedLocation && (
                   <div className="mt-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-700">
-                    📍 Location selected: {selectedLocation.lat.toFixed(6)},{" "}
-                    {selectedLocation.lng.toFixed(6)}
+                    📍 Coordinates: {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
                   </div>
                 )}
               </div>
@@ -377,7 +485,7 @@ export default function AssignPropertyPage() {
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Property Name
+                    Property Name <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -391,7 +499,7 @@ export default function AssignPropertyPage() {
 
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Address / Label
+                    Address <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -401,19 +509,21 @@ export default function AssignPropertyPage() {
                     className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
                     placeholder="e.g. 123 Ocean Drive, Miami Beach, FL"
                   />
+                  <p className="text-xs text-gray-500">
+                    Type to search, use "Get My Location", or click on map
+                  </p>
                 </div>
 
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Assign to Manager
+                    Assign to Manager <span className="text-gray-400">(optional)</span>
                   </label>
                   <select
                     value={selectedUserId}
                     onChange={(e) => setSelectedUserId(e.target.value)}
-                    required
                     className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-lg outline-none focus:border-[#357AFF] focus:ring-1 focus:ring-[#357AFF]"
                   >
-                    <option value="">Select a manager...</option>
+                    <option value="">Skip for now (unassigned property)</option>
                     {users.map((user) => (
                       <option key={user.id} value={user.id}>
                         {user.name || user.email}{" "}
@@ -423,10 +533,7 @@ export default function AssignPropertyPage() {
                   </select>
                   {users.length === 0 && (
                     <p className="text-xs text-amber-600">
-                      No managers available.{" "}
-                      <a href="/admin/manage-users" className="underline">
-                        Create one here
-                      </a>
+                      No managers available. Property will be unassigned.
                     </p>
                   )}
                 </div>
@@ -446,10 +553,10 @@ export default function AssignPropertyPage() {
 
                 <button
                   type="submit"
-                  disabled={loading || users.length === 0}
-                  className="w-full rounded-lg bg-[#357AFF] px-4 py-3 text-base font-medium text-white transition-colors hover:bg-[#2E69DE] focus:outline-none focus:ring-2 focus:ring-[#357AFF] focus:ring-offset-2 disabled:opacity-50"
+                  disabled={loading || !selectedLocation}
+                  className="w-full rounded-lg bg-[#357AFF] px-4 py-3 text-base font-medium text-white transition-colors hover:bg-[#2E69DE] focus:outline-none focus:ring-2 focus:ring-[#357AFF] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? "Creating Property..." : "Create & Assign Property"}
+                  {loading ? "Creating Property..." : "Create Property"}
                 </button>
               </form>
 
@@ -458,10 +565,11 @@ export default function AssignPropertyPage() {
                   💡 Instructions
                 </h3>
                 <ul className="space-y-1 text-xs text-gray-600">
-                  <li>1. Search for an address or click on the map</li>
-                  <li>2. Review and edit the property name and address</li>
-                  <li>3. Select the manager to assign this property to</li>
-                  <li>4. Click "Create & Assign Property"</li>
+                  <li>1. "Get My Location" - auto-fills coordinates only</li>
+                  <li>2. Search address - auto-fills all fields including name</li>
+                  <li>3. Click on map - sets coordinates only</li>
+                  <li>4. Enter property name manually (required)</li>
+                  <li>5. Optionally assign to a manager</li>
                 </ul>
               </div>
             </div>

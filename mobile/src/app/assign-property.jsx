@@ -10,7 +10,6 @@ import {
   MapPin,
   Plus,
   Trash2,
-  User,
   X,
 } from "lucide-react-native";
 import { useState } from "react";
@@ -47,7 +46,10 @@ export default function AssignPropertyScreen() {
   const [selectedManagerId, setSelectedManagerId] = useState(null);
   const [addError, setAddError] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   const { data: propsData, isLoading: propsLoading, refetch, isRefetching } = useQuery({
     queryKey: ["all-properties"],
@@ -63,14 +65,21 @@ export default function AssignPropertyScreen() {
   const managers = usersData?.users || [];
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      api.post("/api/properties", {
-        name: propName,
-        address: propAddress,
+    mutationFn: () => {
+      const body = {
+        name: propName.trim(),
+        address: propAddress.trim(),
         latitude: parseFloat(propLat),
         longitude: parseFloat(propLng),
-        managerId: selectedManagerId,
-      }),
+      };
+
+      // Only include managerId if one is selected
+      if (selectedManagerId) {
+        body.managerId = selectedManagerId;
+      }
+
+      return api.post("/api/properties", body);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["all-properties"] });
       setShowAddModal(false);
@@ -99,7 +108,44 @@ export default function AssignPropertyScreen() {
     setPropLng("");
     setSelectedManagerId(null);
     setAddError("");
-    setShowAdvanced(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowSearchResults(false);
+  };
+
+  // Search address using Nominatim (OpenStreetMap)
+  const searchAddress = async (query) => {
+    if (!query.trim() || query.trim().length < 3) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+
+    setSearching(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`,
+        {
+          headers: {
+            "User-Agent": "Promenade-Mobile-App",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Search failed");
+      }
+
+      const data = await response.json();
+      setSearchResults(data);
+      setShowSearchResults(true);
+    } catch (err) {
+      console.error("Nominatim error:", err);
+      // Silently fail for autocomplete
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
   };
 
   const getCurrentLocation = async () => {
@@ -124,35 +170,9 @@ export default function AssignPropertyScreen() {
       const lat = location.coords.latitude;
       const lng = location.coords.longitude;
 
+      // Only update lat/lng - NOT address or name
       setPropLat(lat.toString());
       setPropLng(lng.toString());
-
-      // Reverse geocode to get address
-      try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-          {
-            headers: {
-              "User-Agent": "Promenade-Mobile-App",
-            },
-          }
-        );
-        const data = await response.json();
-
-        if (data.display_name) {
-          setPropAddress(data.display_name);
-        } else {
-          setPropAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-        }
-
-        if (!propName.trim()) {
-          setPropName(data.display_name?.split(",")?.[0]?.trim() || "New Property");
-        }
-      } catch (geocodeError) {
-        // Geocode failed, but we have coordinates
-        setPropAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-        console.warn("Geocoding failed:", geocodeError);
-      }
 
       setAddError("");
     } catch (error) {
@@ -161,6 +181,25 @@ export default function AssignPropertyScreen() {
     } finally {
       setGettingLocation(false);
     }
+  };
+
+  const handleSelectAddress = (place) => {
+    const lat = parseFloat(place.lat);
+    const lng = parseFloat(place.lon);
+
+    // Auto-fill all fields from address search
+    setPropLat(lat.toString());
+    setPropLng(lng.toString());
+    setPropAddress(place.display_name);
+
+    // Extract name from address (first part before comma)
+    const nameParts = place.display_name.split(",");
+    setPropName(nameParts[0]?.trim() || "");
+    setSearchQuery(place.display_name);
+    setShowSearchResults(false);
+    setSearchResults([]);
+
+    setAddError("");
   };
 
   const handleCreate = () => {
@@ -177,12 +216,7 @@ export default function AssignPropertyScreen() {
     }
 
     if (!propLat || !propLng || isNaN(parseFloat(propLat)) || isNaN(parseFloat(propLng))) {
-      setAddError("Please use 'Get My Location' or enter coordinates in Advanced");
-      return;
-    }
-
-    if (!selectedManagerId) {
-      setAddError("Please select a manager");
+      setAddError("Please use 'Get My Location', search for an address, or enter coordinates");
       return;
     }
 
@@ -359,9 +393,22 @@ export default function AssignPropertyScreen() {
       )}
 
       {/* Add Property Modal */}
-      <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAddModal(false)}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <Modal
+        visible={showAddModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAddModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: colors.background,
+            }}
+          >
             <View
               style={{
                 flexDirection: "row",
@@ -389,7 +436,10 @@ export default function AssignPropertyScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: spacing["2xl"] }} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              contentContainerStyle={{ padding: spacing["2xl"] }}
+              keyboardShouldPersistTaps="handled"
+            >
               {addError ? (
                 <View
                   style={{
@@ -409,7 +459,7 @@ export default function AssignPropertyScreen() {
                 </View>
               ) : null}
 
-              {/* Get Location Button */}
+              {/* Get Location Button - Only fills lat/lng */}
               <TouchableOpacity
                 onPress={getCurrentLocation}
                 disabled={gettingLocation}
@@ -422,7 +472,7 @@ export default function AssignPropertyScreen() {
                   backgroundColor: gettingLocation ? `${brandColors.accentStart}40` : brandColors.accentStart,
                   paddingVertical: spacing.lg,
                   borderRadius: radius.lg,
-                  marginBottom: spacing.xl,
+                  marginBottom: spacing.lg,
                 }}
               >
                 {gettingLocation ? (
@@ -437,33 +487,112 @@ export default function AssignPropertyScreen() {
                         color: "#FFFFFF",
                       }}
                     >
-                      {propLat && propLng ? "📍 Update My Location" : "📍 Get My Current Location"}
+                      Get My Location
                     </Text>
                   </>
                 )}
               </TouchableOpacity>
+              <Text style={{ fontSize: typography.sizes.xs, color: colors.secondaryText, textAlign: "center" }}>
+                Auto-fills latitude & longitude only
+              </Text>
 
-              {propLat && propLng && (
-                <View
-                  style={{
-                    backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)",
-                    borderRadius: radius.md,
-                    padding: spacing.md,
-                    marginBottom: spacing.xl,
-                  }}
-                >
-                  <Text style={{ fontSize: typography.sizes.xs, color: colors.secondaryText, marginBottom: 2 }}>
-                    Coordinates captured:
-                  </Text>
-                  <Text style={{ fontSize: typography.sizes.sm, color: colors.text }}>
-                    {parseFloat(propLat).toFixed(6)}, {parseFloat(propLng).toFixed(6)}
-                  </Text>
+              {/* Address Search with Autocomplete */}
+              <View style={{ marginBottom: spacing.lg }}>
+                <Text style={labelStyle}>Address (auto-fills all fields) *</Text>
+                <View style={{ position: "relative" }}>
+                  <TextInput
+                    value={searchQuery}
+                    onChangeText={(text) => {
+                      setSearchQuery(text);
+                      // Debounced search
+                      const timeoutId = setTimeout(() => searchAddress(text), 300);
+                      return () => clearTimeout(timeoutId);
+                    }}
+                    placeholder="Start typing address..."
+                    placeholderTextColor={colors.placeholderText}
+                    style={[
+                      inputStyle,
+                      {
+                        color: colors.text,
+                        backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.03)",
+                        borderColor: colors.border,
+                        paddingRight: spacing["2xl"],
+                      },
+                    ]}
+                  />
+                  {searching && (
+                    <Text
+                      style={{
+                        position: "absolute",
+                        right: spacing.lg,
+                        top: "50%",
+                        marginTop: -10,
+                        fontSize: typography.sizes.xs,
+                        color: colors.secondaryText,
+                      }}
+                    >
+                      Searching...
+                    </Text>
+                  )}
                 </View>
-              )}
+
+                {/* Autocomplete Dropdown */}
+                {showSearchResults && searchResults.length > 0 && (
+                  <View
+                    style={{
+                      backgroundColor: colors.cardBackground,
+                      borderRadius: radius.md,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      maxHeight: 200,
+                      marginBottom: spacing.lg,
+                    }}
+                  >
+                    <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled={false}>
+                      {searchResults.map((place, idx) => (
+                        <TouchableOpacity
+                          key={idx}
+                          onPress={() => handleSelectAddress(place)}
+                          style={{
+                            borderBottomWidth: 1,
+                            borderBottomColor: colors.border,
+                            paddingVertical: spacing.md,
+                            paddingHorizontal: spacing.lg,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: typography.sizes.sm,
+                              fontWeight: typography.weights.medium,
+                              color: colors.text,
+                              marginBottom: 2,
+                            }}
+                          >
+                            {place.display_name.split(",")[0]}
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: typography.sizes.xs,
+                              color: colors.secondaryText,
+                            }}
+                            numberOfLines={2}
+                          >
+                            {place.display_name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
 
               {[
-                { label: "Property Name *", value: propName, setter: setPropName, placeholder: "e.g. Sunrise Apartments" },
-                { label: "Address *", value: propAddress, setter: setPropAddress, placeholder: "123 Main St, City, State" },
+                {
+                  label: "Property Name *",
+                  value: propName,
+                  setter: setPropName,
+                  placeholder: "e.g. Sunrise Apartments",
+                },
               ].map(({ label, value, setter, placeholder }) => (
                 <View key={label} style={{ marginBottom: spacing.lg }}>
                   <Text style={labelStyle}>{label}</Text>
@@ -484,82 +613,36 @@ export default function AssignPropertyScreen() {
                 </View>
               ))}
 
-              {/* Advanced: Manual coordinates */}
-              <TouchableOpacity
-                onPress={() => setShowAdvanced(!showAdvanced)}
-                style={{ marginBottom: spacing.md }}
-              >
-                <Text style={{ fontSize: typography.sizes.sm, color: brandColors.accentStart }}>
-                  {showAdvanced ? "▼" : "▶"} Advanced: Enter coordinates manually
-                </Text>
-              </TouchableOpacity>
+              {/* Manager Selection - Optional */}
+              <Text style={[labelStyle, { marginBottom: spacing.sm }]}>
+                Assign to Manager (optional)
+              </Text>
 
-              {showAdvanced && (
-                <View
-                  style={{
-                    backgroundColor: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-                    borderRadius: radius.md,
-                    padding: spacing.md,
-                    marginBottom: spacing.lg,
-                  }}
-                >
-                  {[
-                    { label: "Latitude", value: propLat, setter: setPropLat, placeholder: "e.g. 40.7128", keyboard: "numeric" },
-                    { label: "Longitude", value: propLng, setter: setPropLng, placeholder: "e.g. -74.0060", keyboard: "numeric" },
-                  ].map(({ label, value, setter, placeholder, keyboard }) => (
-                    <View key={label} style={{ marginBottom: spacing.sm }}>
-                      <Text style={[labelStyle, { fontSize: typography.sizes.xs }]}>{label}</Text>
-                      <TextInput
-                        value={value}
-                        onChangeText={setter}
-                        placeholder={placeholder}
-                        placeholderTextColor={colors.placeholderText}
-                        keyboardType={keyboard ?? "default"}
-                        style={[
-                          inputStyle,
-                          {
-                            color: colors.text,
-                            backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.03)",
-                            borderColor: colors.border,
-                            paddingVertical: spacing.sm,
-                          },
-                        ]}
-                      />
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              <Text style={[labelStyle, { marginBottom: spacing.sm }]}>Assign Manager *</Text>
               {managers.length === 0 ? (
                 <View
                   style={{
-                    backgroundColor: colors.errorBg || "rgba(196,112,112,0.15)",
+                    backgroundColor: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
                     borderRadius: radius.md,
                     padding: spacing.lg,
                     marginBottom: spacing.xl,
                   }}
                 >
-                  <Text style={{ fontSize: typography.sizes.sm, color: brandColors.error }}>
-                    No managers available. Please create a manager account first via the web admin panel.
+                  <Text style={{ fontSize: typography.sizes.sm, color: colors.secondaryText }}>
+                    No managers available. Property will be created unassigned.
                   </Text>
                 </View>
               ) : (
-                managers.map((m) => (
+                <>
                   <TouchableOpacity
-                    key={m.id}
-                    onPress={() => setSelectedManagerId(m.id)}
-                    activeOpacity={0.8}
+                    onPress={() => setSelectedManagerId(null)}
                     style={{
                       flexDirection: "row",
                       alignItems: "center",
                       padding: spacing.lg,
                       borderRadius: radius.md,
                       borderWidth: 1,
-                      borderColor: selectedManagerId === m.id ? brandColors.accentStart : colors.border,
-                      backgroundColor: selectedManagerId === m.id ? `${brandColors.accentStart}12` : "transparent",
+                      borderColor: colors.border,
                       marginBottom: spacing.sm,
-                      gap: spacing.md,
                     }}
                   >
                     <View
@@ -568,32 +651,67 @@ export default function AssignPropertyScreen() {
                         height: 20,
                         borderRadius: 10,
                         borderWidth: 2,
-                        borderColor: selectedManagerId === m.id ? brandColors.accentStart : colors.border,
+                        borderColor: colors.border,
                         alignItems: "center",
                         justifyContent: "center",
                       }}
-                    >
-                      {selectedManagerId === m.id && (
-                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: brandColors.accentStart }} />
-                      )}
-                    </View>
-                    <View>
-                      <Text
-                        style={{ fontSize: typography.sizes.md, fontWeight: typography.weights.medium, color: colors.text }}
-                      >
-                        {m.name}
-                      </Text>
-                      <Text style={{ fontSize: typography.sizes.xs, color: colors.secondaryText }}>
-                        {m.phone_number}
-                      </Text>
-                    </View>
+                    />
+                    <Text style={{ fontSize: typography.sizes.md, color: colors.text, marginLeft: spacing.md }}>
+                      Skip (unassigned)
+                    </Text>
                   </TouchableOpacity>
-                ))
+
+                  {managers.map((m) => (
+                    <TouchableOpacity
+                      key={m.id}
+                      onPress={() => setSelectedManagerId(m.id)}
+                      activeOpacity={0.8}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        padding: spacing.lg,
+                        borderRadius: radius.md,
+                        borderWidth: 1,
+                        borderColor: selectedManagerId === m.id ? brandColors.accentStart : colors.border,
+                        backgroundColor:
+                          selectedManagerId === m.id ? `${brandColors.accentStart}12` : "transparent",
+                        marginBottom: spacing.sm,
+                        gap: spacing.md,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          borderWidth: 2,
+                          borderColor: selectedManagerId === m.id ? brandColors.accentStart : colors.border,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {selectedManagerId === m.id && (
+                          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: brandColors.accentStart }} />
+                        )}
+                      </View>
+                      <View>
+                        <Text
+                          style={{ fontSize: typography.sizes.md, fontWeight: typography.weights.medium, color: colors.text }}
+                        >
+                          {m.name}
+                        </Text>
+                        <Text style={{ fontSize: typography.sizes.xs, color: colors.secondaryText }}>
+                          {m.phone_number}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </>
               )}
 
               <TouchableOpacity
                 onPress={handleCreate}
-                disabled={createMutation.isPending || managers.length === 0}
+                disabled={createMutation.isPending}
                 activeOpacity={0.85}
                 style={{ marginTop: spacing.xl }}
               >
@@ -605,7 +723,7 @@ export default function AssignPropertyScreen() {
                     paddingVertical: 17,
                     borderRadius: radius.lg,
                     alignItems: "center",
-                    opacity: createMutation.isPending || managers.length === 0 ? 0.5 : 1,
+                    opacity: createMutation.isPending ? 0.5 : 1,
                   }}
                 >
                   {createMutation.isPending ? (

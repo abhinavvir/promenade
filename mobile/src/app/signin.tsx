@@ -242,6 +242,18 @@ export default function SignInPage() {
                   </Pressable>
                 </View>
 
+                {/* Forgot Password */}
+                <TouchableOpacity
+                  onPress={() => router.push('/forgot-password')}
+                  disabled={loading}
+                  style={{ alignSelf: 'flex-end', marginTop: 8 }}
+                  hitSlop={8}
+                >
+                  <Text style={{ fontSize: 13, color: brandColors.accentStart, fontWeight: '500' }}>
+                    Forgot Password?
+                  </Text>
+                </TouchableOpacity>
+
                 {/* Submit */}
                 <TouchableOpacity
                   onPress={handleSignIn}
