@@ -368,6 +368,7 @@ export default function AssignPropertyScreen() {
               setShowAddModal(true);
             }}
             activeOpacity={0.85}
+            style={{ marginRight: spacing.sm }}
           >
             <LinearGradient
               colors={[brandColors.accentStart, brandColors.accentEnd]}
@@ -375,6 +376,24 @@ export default function AssignPropertyScreen() {
             >
               <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
             </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Map View Button - NEW */}
+          <TouchableOpacity
+            onPress={() => router.push("/assign-property-map")}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: "rgba(255,255,255,0.15)",
+              borderRadius: 20,
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.2)",
+            }}
+          >
+            <MapPin size={18} color="#F0EDE8" strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </LinearGradient>
