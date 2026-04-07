@@ -23,6 +23,7 @@ import * as r_properties from '../src/app/api/properties/route.js';
 import * as r_properties_my from '../src/app/api/properties/my/route.js';
 import * as r_requests from '../src/app/api/requests/route.js';
 import * as r_requests_id from '../src/app/api/requests/[id]/route.js';
+import * as r_setup from '../src/app/api/setup/route.js';
 
 const API_BASENAME = '/api';
 const api = new Hono();
@@ -51,6 +52,7 @@ const routes: Array<{ path: string; mod: Record<string, any> }> = [
   { path: '/properties/my', mod: r_properties_my },
   { path: '/requests', mod: r_requests },
   { path: '/requests/:id', mod: r_requests_id },
+  { path: '/setup', mod: r_setup },
 ];
 
 for (const { path, mod } of routes) {
