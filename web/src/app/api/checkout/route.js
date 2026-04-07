@@ -32,11 +32,16 @@ export async function POST(request) {
 
     const checkInRecord = activeCheckIn[0];
 
+    const checkOutTime = new Date();
+    const checkInTime = new Date(checkInRecord.check_in_time);
+    const durationMinutes = Math.round((checkOutTime - checkInTime) / 60000);
+    const durationHours = parseFloat((durationMinutes / 60).toFixed(2));
+
     // Update the check-in record with checkout info
     const result = await sql`
       UPDATE check_ins
       SET
-        check_out_time = NOW(),
+        check_out_time = ${checkOutTime.toISOString()},
         check_out_latitude = ${latitude || null},
         check_out_longitude = ${longitude || null},
         check_in_status = 'checked_out'
@@ -75,7 +80,9 @@ export async function POST(request) {
         ${JSON.stringify({
           checkInId: checkInRecord.id,
           checkInTime: checkInRecord.check_in_time,
-          checkOutTime: new Date().toISOString(),
+          checkOutTime: checkOutTime.toISOString(),
+          durationMinutes,
+          durationHours,
         })}
       )
     `;

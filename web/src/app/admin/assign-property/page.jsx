@@ -236,8 +236,7 @@ export default function AssignPropertyPage() {
                 </div>
                 {selectedLocation && (
                   <div className="mt-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-700">
-                    📍 Selected: {selectedLocation.lat.toFixed(6)},{" "}
-                    {selectedLocation.lng.toFixed(6)}
+                    📍 Location selected
                   </div>
                 )}
               </div>

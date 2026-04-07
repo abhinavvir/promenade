@@ -33,7 +33,7 @@ export async function GET(request) {
 
   try {
     const users = await sql`
-      SELECT 
+      SELECT
         u.id,
         u.name,
         u.email,
@@ -41,14 +41,17 @@ export async function GET(request) {
         u.role,
         u.created_via,
         u.created_at,
-        p.id as property_id,
-        p.name as property_name,
-        p.address as property_address,
-        p.latitude,
-        p.longitude,
-        a.is_temporary_password
+        a.is_temporary_password,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object('id', p.id, 'name', p.name, 'address', p.address) ORDER BY p.name)
+            FROM properties p
+            JOIN property_managers pm ON pm.property_id = p.id
+            WHERE pm.user_id = u.id
+          ),
+          '[]'::json
+        ) AS properties
       FROM auth_users u
-      LEFT JOIN properties p ON p.manager_id = u.id
       LEFT JOIN auth_accounts a ON a."userId" = u.id AND a.provider = 'credentials'
       WHERE u.role = 'manager'
       ORDER BY u.name ASC
@@ -156,6 +159,7 @@ export async function DELETE(request) {
 
     // Delete in correct order to respect foreign keys
     await sql`DELETE FROM audit_logs WHERE user_id = ${parseInt(userId)}`;
+    await sql`DELETE FROM property_managers WHERE user_id = ${parseInt(userId)}`;
     await sql`UPDATE properties SET manager_id = NULL WHERE manager_id = ${parseInt(userId)}`;
     await sql`DELETE FROM auth_sessions WHERE "userId" = ${parseInt(userId)}`;
     await sql`DELETE FROM auth_accounts WHERE "userId" = ${parseInt(userId)}`;

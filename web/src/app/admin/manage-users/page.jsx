@@ -84,10 +84,9 @@ export default function ManageUsersPage() {
     setSelectedPropertyId("");
   };
 
-  const handleRemoveProperty = async () => {
-    if (!manageUser?.property_id) return;
+  const handleRemoveProperty = async (propertyId, propertyName) => {
     const confirmed = window.confirm(
-      `Remove "${manageUser.property_name}" from ${manageUser.name}? The property will still exist but won't be assigned to anyone.`,
+      `Remove "${propertyName}" from ${manageUser.name}?`,
     );
     if (!confirmed) return;
 
@@ -95,23 +94,18 @@ export default function ManageUsersPage() {
     setManageError(null);
     try {
       const res = await fetch(
-        `/api/properties?propertyId=${manageUser.property_id}&unassign=true`,
+        `/api/properties?propertyId=${propertyId}&userId=${manageUser.id}`,
         { method: "DELETE" },
       );
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to remove property");
       }
-      setManageSuccess(
-        `Property "${manageUser.property_name}" removed from ${manageUser.name}`,
-      );
+      setManageSuccess(`"${propertyName}" removed from ${manageUser.name}`);
       await fetchData();
-      // Update local manageUser to reflect removal
       setManageUser((prev) => ({
         ...prev,
-        property_id: null,
-        property_name: null,
-        property_address: null,
+        properties: (prev.properties || []).filter((p) => p.id !== propertyId),
       }));
     } catch (err) {
       setManageError(err.message);
@@ -138,17 +132,18 @@ export default function ManageUsersPage() {
 
       setManageSuccess(`Property assigned to ${manageUser.name} successfully!`);
       setManageAction(null);
+      setSelectedPropertyId("");
       await fetchData();
-      // Update local manageUser
       const prop = allProperties.find(
         (p) => p.id === parseInt(selectedPropertyId),
       );
       if (prop) {
         setManageUser((prev) => ({
           ...prev,
-          property_id: prop.id,
-          property_name: prop.name,
-          property_address: prop.address,
+          properties: [
+            ...(prev.properties || []).filter((p) => p.id !== prop.id),
+            { id: prop.id, name: prop.name, address: prop.address },
+          ],
         }));
       }
     } catch (err) {
@@ -574,35 +569,39 @@ export default function ManageUsersPage() {
                   </div>
                 )}
 
-                {/* Current Property Section */}
+                {/* Current Properties Section */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
-                    Assigned Property
+                    Assigned Properties
                   </h3>
-                  {manageUser.property_id ? (
-                    <div className="rounded-lg border border-gray-200 bg-white p-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="text-base font-semibold text-gray-900">
-                            {manageUser.property_name}
-                          </div>
-                          <div className="text-sm text-gray-500 mt-1">
-                            {manageUser.property_address}
+                  {(manageUser.properties || []).length > 0 ? (
+                    <div className="space-y-2">
+                      {(manageUser.properties || []).map((prop) => (
+                        <div key={prop.id} className="rounded-lg border border-gray-200 bg-white p-4">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="text-sm font-semibold text-gray-900">
+                                {prop.name}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                {prop.address}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveProperty(prop.id, prop.name)}
+                              disabled={manageLoading}
+                              className="flex-shrink-0 ml-4 rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                            >
+                              Remove
+                            </button>
                           </div>
                         </div>
-                        <button
-                          onClick={handleRemoveProperty}
-                          disabled={manageLoading}
-                          className="flex-shrink-0 ml-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 disabled:opacity-50 transition-colors"
-                        >
-                          {manageLoading ? "Removing..." : "Remove"}
-                        </button>
-                      </div>
+                      ))}
                     </div>
                   ) : (
                     <div className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 p-4 text-center">
                       <span className="text-sm text-gray-400">
-                        No property assigned
+                        No properties assigned
                       </span>
                     </div>
                   )}
@@ -668,9 +667,8 @@ export default function ManageUsersPage() {
                             >
                               <option value="">Select a property...</option>
                               {allProperties.map((p) => {
-                                const assignedTo = p.manager_name
-                                  ? ` (assigned to ${p.manager_name})`
-                                  : " (unassigned)";
+                                const managerNames = (p.managers || []).map((m) => m.name).join(", ");
+                                const assignedTo = managerNames ? ` (${managerNames})` : " (unassigned)";
                                 return (
                                   <option key={p.id} value={p.id}>
                                     {p.name} — {p.address}
@@ -688,18 +686,18 @@ export default function ManageUsersPage() {
                                       p.id === parseInt(selectedPropertyId),
                                   );
                                   if (!sel) return null;
-                                  const isReassign =
-                                    sel.manager_id &&
-                                    sel.manager_id !== manageUser.id;
+                                  const alreadyAssigned = (sel.managers || []).some((m) => m.id === manageUser.id);
+                                  const otherManagers = (sel.managers || []).filter((m) => m.id !== manageUser.id);
                                   return (
                                     <div className="text-xs text-amber-800">
-                                      {isReassign ? (
+                                      {alreadyAssigned ? (
                                         <>
-                                          ⚠️ This property is currently assigned
-                                          to <strong>{sel.manager_name}</strong>
-                                          . Assigning it to{" "}
-                                          <strong>{manageUser.name}</strong>{" "}
-                                          will reassign it.
+                                          ✓ Already assigned to {manageUser.name}
+                                        </>
+                                      ) : otherManagers.length > 0 ? (
+                                        <>
+                                          📍 <strong>{sel.name}</strong> — also assigned to{" "}
+                                          {otherManagers.map((m) => m.name).join(", ")}. Will add {manageUser.name} as additional manager.
                                         </>
                                       ) : (
                                         <>
@@ -817,7 +815,7 @@ export default function ManageUsersPage() {
                   Contact
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                  Assigned Property
+                  Assigned Properties
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                   Password
@@ -864,18 +862,18 @@ export default function ManageUsersPage() {
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        {u.property_name ? (
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {u.property_name}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {u.property_address}
-                            </div>
+                        {(u.properties || []).length > 0 ? (
+                          <div className="space-y-1">
+                            {(u.properties || []).map((p) => (
+                              <div key={p.id}>
+                                <div className="text-sm font-medium text-gray-900">{p.name}</div>
+                                <div className="text-xs text-gray-400">{p.address}</div>
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-                            No property
+                            No properties
                           </span>
                         )}
                       </td>

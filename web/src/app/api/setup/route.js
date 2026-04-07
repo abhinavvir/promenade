@@ -104,6 +104,15 @@ async function initSchema() {
       updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS property_managers (
+      id          SERIAL PRIMARY KEY,
+      property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+      user_id     INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(property_id, user_id)
+    )
+  `;
 }
 
 export async function GET() {
