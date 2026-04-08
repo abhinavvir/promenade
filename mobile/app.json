@@ -50,15 +50,6 @@
           "resizeMode": "contain",
           "backgroundColor": "#1A1F2B"
         }
-      ],
-      [
-        "expo-map",
-        {
-          "provider": "default",
-          "config": {
-            "mapStyle": "standard"
-          }
-        }
       ]
     ],
     "experiments": {
